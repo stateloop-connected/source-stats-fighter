@@ -552,6 +552,11 @@ pre.code {
   .battle-boards {
     grid-template-columns: 1fr;
   }
+  .stats-wrap {
+    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+  }
 }
 .canvas-wrap {
   border: 1px solid var(--panel-border);

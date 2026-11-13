@@ -8,7 +8,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Record<
       if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2).toLowerCase(), v);
       else if (k === "class") el.className = v;
       else if (k === "style") el.setAttribute("style", v);
-      else if (k === "value" || k === "checked" || k === "disabled" || k === "selected") (el as any)[k] = v;
+      else if (k === "value" || k === "checked" || k === "disabled" || k === "selected") (el as unknown as Record<string, unknown>)[k] = v;
       else el.setAttribute(k, v === true ? "" : String(v));
     }
   }
