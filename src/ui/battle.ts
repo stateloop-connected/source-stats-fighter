@@ -260,27 +260,30 @@ function advance(dt: number) {
 function renderTally() {
   const sc = battle?.scenario ?? state.scenario;
   const N = battle?.problem.formations ?? sc.formations;
+  const C = sc.cannons.length;
+  const ships = C * N;
   const done = battle ? battle.loggedUpTo : 0;
-  const counts = sc.classes.map((_, k) => (battle ? battle.result.formations.slice(0, done).filter((f) => f.stopped[k]).length : 0));
+  const counts = sc.classes.map((_, k) => (battle ? battle.result.formations.slice(0, done).reduce((n, f) => n + f.stopped[k], 0) : 0));
   fill(
     tallyEl,
-    h("div", { class: "dim small" }, `Formation ${Math.min(done, N)} of ${N}`),
+    h("div", { class: "dim small" }, `Formation ${Math.min(done, N)} of ${N} · ${C} lane${C === 1 ? "" : "s"}`),
     sc.classes.map((k, i) => {
-      const need = goalCount(k.goal, N);
-      const share = done ? counts[i] / done : 0;
-      const missed = done - counts[i];
-      const status = counts[i] >= need ? "met" : missed > N - need ? "lost" : "open";
+      const need = goalCount(k.goal, ships);
+      const seen = done * C;
+      const share = seen ? counts[i] / seen : 0;
+      const missed = seen - counts[i];
+      const status = counts[i] >= need ? "met" : missed > ships - need ? "lost" : "open";
       return h(
         "div",
         { class: `tally-row ${status}` },
-        h("div", { class: "row between" }, h("span", null, `${k.name}${k.primary ? " ★" : ""}`), h("span", null, `${counts[i]}/${done}`, h("span", { class: "dim" }, ` (${pct(share)})`))),
+        h("div", { class: "row between" }, h("span", null, `${k.name}${k.primary ? " ★" : ""}`), h("span", null, `${counts[i]}/${seen}`, h("span", { class: "dim" }, ` (${pct(share)})`))),
         h(
           "div",
           { class: "bar-track" },
-          h("div", { class: "bar-fill", style: `width:${(counts[i] / N) * 100}%` }),
-          h("div", { class: "bar-marker", style: `left:${(need / N) * 100}%`, title: `goal: ${need} of ${N}` }),
+          h("div", { class: "bar-fill", style: `width:${(counts[i] / ships) * 100}%` }),
+          h("div", { class: "bar-marker", style: `left:${(need / ships) * 100}%`, title: `goal: ${need} of ${ships}` }),
         ),
-        h("div", { class: "dim small" }, `goal ${pct(k.goal)} → ${need} of ${N}${status === "met" ? " ✔ met" : status === "lost" ? " ✖ out of reach" : ""}`),
+        h("div", { class: "dim small" }, `goal ${pct(k.goal)} → ${need} of ${ships} ships${status === "met" ? " ✔ met" : status === "lost" ? " ✖ out of reach" : ""}`),
       );
     }),
   );
@@ -296,7 +299,7 @@ function logFormation(fi: number) {
       "li",
       null,
       h("span", { class: "dim" }, `#${fi + 1} `),
-      sc.classes.map((k, i) => h("span", { class: fr.stopped[i] ? "ok" : "bad" }, `${k.name} ${fr.stopped[i] ? "✔" : "✖"} `)),
+      sc.classes.map((k, i) => h("span", { class: fr.stopped[i] === sc.cannons.length ? "ok" : fr.stopped[i] ? "warn-text" : "bad" }, `${k.name} ${fr.stopped[i]}/${sc.cannons.length} `)),
       h("span", { class: "dim" }, `· ${fr.order.length} breach${fr.order.length === 1 ? "" : "es"}${stranded > 1e-9 ? ` · ${pct(stranded)} stranded` : ""}`),
     ),
   );
@@ -322,7 +325,7 @@ function renderDebrief() {
         "tr",
         null,
         h("td", null, `${k.name}${k.primary ? " ★ primary" : ""}`),
-        h("td", null, `${r.tally[i]} / ${N} (${pct(r.tally[i] / N)})`),
+        h("td", null, `${r.tally[i]} / ${r.ships} (${pct(r.tally[i] / r.ships)})`),
         h("td", null, pct(k.goal)),
         h("td", { class: r.goalMet[i] ? "ok" : "bad" }, r.goalMet[i] ? "✔ met" : "✖ missed"),
       ),

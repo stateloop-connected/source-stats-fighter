@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { pnorm, qnorm, shield, binomUpper, cholesky } from "./normal";
 import { graphTest, removeNode, validateGraph } from "./graph";
-import { Rng } from "./rng";
-import { drawShots, simulate, runBattle, mcse, type SimResult } from "./battle";
+import { Rng, deriveSeed } from "./rng";
+import { drawShots, simulate, runBattle, runFormation, goalCount, mcse, type SimResult } from "./battle";
 import { compile, defaultDesign, defaultScenario, effectsFor, information, type Problem } from "./model";
 import { fromJSON, toJSON, toR, toTikZ } from "./export";
 
@@ -291,6 +291,41 @@ describe("battle engine", () => {
     const r = cov / Math.sqrt((sxx / n - (sx / n) ** 2) * (syy / n - (sy / n) ** 2));
     expect(Math.abs(r - 0.5)).toBeLessThan(0.02);
     expect(Math.abs(sxx / n - 1)).toBeLessThan(0.03);
+  });
+
+  it("counts ships over all lanes, the same way in battle and simulation", () => {
+    const s = defaultScenario();
+    const p = compile(s, defaultDesign(), effectsFor(s, "truth"));
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const b = runBattle(p, deriveSeed(seed, 0));
+      expect(b.ships).toBe(2 * s.formations);
+      const lanes = s.classes.map((_, k) => b.formations.reduce((n, f) => n + (f.rejected[k] ? 1 : 0) + (f.rejected[3 + k] ? 1 : 0), 0));
+      expect(b.tally).toEqual(lanes);
+      expect(b.goalMet).toEqual(b.tally.map((t, k) => t >= goalCount(s.classes[k].goal, b.ships)));
+      const one = simulate(p, 1, seed);
+      expect(one.classStop.map((x) => Math.round(x * one.ships))).toEqual(b.tally);
+    }
+    const res = simulate(p, 300, 8);
+    s.classes.forEach((_, k) => expect(res.classStop[k]).toBeCloseTo((res.targetFall[k] + res.targetFall[3 + k]) / 2, 12));
+  });
+
+  it("splits each impact into a cannon part and a tracking part shared across lanes", () => {
+    const s = defaultScenario();
+    const rng = new Rng(77);
+    const equal = compile(s, defaultDesign(), effectsFor(s, "truth"));
+    const unequal = compile(s, { ...defaultDesign(), energy: { c1: 60, c2: 150, gc: 90 } }, effectsFor(s, "truth"));
+    for (let i = 0; i < 50; i++) {
+      const f = runFormation(equal, rng, false);
+      f.shots.forEach((z, j) => expect(f.cannonPart[j] + f.trackingPart[j]).toBeCloseTo(z, 10));
+      for (let k = 0; k < 3; k++) expect(f.trackingPart[k]).toBeCloseTo(f.trackingPart[3 + k], 12);
+      const g = runFormation(unequal, rng, false);
+      g.shots.forEach((z, j) => expect(g.cannonPart[j] + g.trackingPart[j]).toBeCloseTo(z, 10));
+      for (let c = 0; c < 2; c++)
+        for (let k = 0; k < 3; k++) {
+          const se = Math.sqrt(1 / unequal.energy[c] + 1 / unequal.gcEnergy);
+          expect(g.trackingPart[c * 3 + k] * se).toBeCloseTo(-g.trackError[k], 10);
+        }
+    }
   });
 
   it("is reproducible from its seed", () => {

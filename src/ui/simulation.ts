@@ -129,6 +129,7 @@ function resultsPanel() {
   if (r.targetFall.length !== ts.length || r.classStop.length !== sc.classes.length)
     return h("section", { class: "panel" }, h("h2", null, "Results"), h("p", { class: "dim" }, "The scenario has changed since the last run. Run the simulator again."));
   const nf = r.battles * r.formations;
+  const ns = r.battles * (r.ships ?? r.formations);
   return h(
     "section",
     { class: "panel" },
@@ -138,8 +139,8 @@ function resultsPanel() {
       bar({ label: `${k.name}${k.primary ? " ★" : ""}`, sub: `stop ≥ ${pct(k.goal)}`, value: r.goalMet[i], n: r.battles }),
     ),
     bar({ label: h("strong", null, "All primary goals"), value: r.allPrimary, n: r.battles }),
-    h("h3", null, "Ships stopped (share of formations)"),
-    sc.classes.map((k, i) => bar({ label: k.name, value: r.classStop[i], n: nf, marker: k.goal, markerLabel: "goal", sense: "good" })),
+    h("h3", null, "Ships stopped (share of ships, all lanes)"),
+    sc.classes.map((k, i) => bar({ label: k.name, value: r.classStop[i], n: ns, marker: k.goal, markerLabel: "goal", sense: "good" })),
     h("h3", null, "Targets falling (share of formations)"),
     ts.map((t) => bar({ label: t.label, value: r.targetFall[t.index], n: nf })),
     h("h3", null, "Side effects"),
