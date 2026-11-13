@@ -1,5 +1,6 @@
-import { h, numInput, pct } from "./dom";
+import { h, numInput, pct, tip } from "./dom";
 import { state, commit } from "./state";
+import { panel, type Panel } from "./panel";
 import { bar } from "./charts";
 import { runSimulation } from "./simclient";
 import { compile, effectsFor, energyUsed, targets, validateDesign, type Assumption, type Design } from "../engine/model";
@@ -11,7 +12,23 @@ let progress = 0;
 let error = "";
 let comparison: { names: string[]; energies: number[]; results: SimResult[]; label: string } | null = null;
 const unchecked = new Set<string>();
-let rerender: () => void = () => {};
+
+const TIPS = {
+  formations:
+    "A battle is a series of formations. Each formation sends one ship of every class at each of your cannons, so every class brings cannons × formations ships per battle.",
+  goals:
+    "How often the battle ends with the goal reached: the share of simulated battles in which at least the goal share of that class's ships was stopped. Primary goals decide victory.",
+  stopped:
+    "The share of this class's ships stopped, counted over every cannon's lane and every simulated formation. The tick marks the goal. A class can average above its goal and still miss it in many battles.",
+  targets:
+    "How often each target, one cannon against one ship class, falls in a formation. When a target falls, that cannon's ship of that class is stopped and its drones fly on through the wormholes.",
+  side:
+    "Drones stranded: the average share of the swarm left on targets that did not fall, and so wasted. False kills: formations in which a target fell although the weapon has no effect on that class; Command's swarm limit keeps this rare.",
+};
+
+let mountedIn: HTMLElement | null = null;
+let panels: Panel[] = [];
+const rerender = () => panels.forEach((p) => p.update());
 
 const ASSUMPTIONS: { id: Assumption; label: string }[] = [
   { id: "intel", label: "Intelligence, best guess" },
@@ -34,8 +51,18 @@ function effects() {
 }
 
 export function renderSimulation(root: HTMLElement) {
-  rerender = () => renderSimulation(root);
-  root.replaceChildren(h("div", { class: "sim-grid" }, h("div", { class: "col-side" }, settingsPanel(), comparePanel()), h("div", { class: "col-main" }, resultsPanel(), comparisonPanel())));
+  if (mountedIn !== root) {
+    mountedIn = root;
+    const sec = () => h("section", { class: "panel" });
+    const st = () => state;
+    const settings = panel(settingsPanel, () => [st().scenario, st().sim, st().design, running, error], sec());
+    const compare = panel(comparePanel, () => [st().saved.map((x) => [x.id, x.design.name]), running], sec());
+    const results = panel(resultsPanel, () => [st().lastSim, st().scenario.classes, st().scenario.cannons, st().scenario.alpha], sec());
+    const comp = panel(comparisonPanel, () => [comparison, st().scenario.classes, st().scenario.energyAvailable], h("div"));
+    panels = [settings, compare, results, comp];
+    root.replaceChildren(h("div", { class: "sim-grid" }, h("div", { class: "col-side" }, settings.el, compare.el), h("div", { class: "col-main" }, results.el, comp.el)));
+  }
+  rerender();
 }
 
 function settingsPanel() {
@@ -73,9 +100,7 @@ function settingsPanel() {
           ),
         )
       : null;
-  return h(
-    "section",
-    { class: "panel" },
+  return [
     h("h2", null, "Training simulator"),
     h("p", { class: "hint" }, "Runs the same battle many times with your current design. The simulator is only as right as its assumptions."),
     h("div", { class: "radios" }, radios),
@@ -87,7 +112,12 @@ function settingsPanel() {
       h("label", null, "Seed ", numInput(sim.seed, (v) => commit((st) => (st.sim.seed = Math.abs(Math.round(v)) >>> 0)), { step: 1, width: "7em" })),
       h("button", { class: "small", title: "New random seed", onClick: () => commit((st) => (st.sim.seed = randomSeed())) }, "🎲"),
     ),
-    h("p", { class: "dim small" }, `${sim.battles} battles × ${sc.formations} formations = ${(sim.battles * sc.formations).toLocaleString()} formations`),
+    h(
+      "p",
+      { class: "dim small" },
+      `${sim.battles} battles × ${sc.formations} formations = ${(sim.battles * sc.formations).toLocaleString()} formations, ${sc.cannons.length * sc.formations} ships of each class per battle`,
+      tip(TIPS.formations),
+    ),
     issues.length ? h("p", { class: "error" }, "✖ The design has errors. Fix them in Setup first.") : null,
     h(
       "div",
@@ -96,7 +126,7 @@ function settingsPanel() {
       running ? h("div", { class: "meter" }, h("div", { class: "meter-fill", style: `width:${progress * 100}%` })) : null,
     ),
     error ? h("p", { class: "error" }, error) : null,
-  );
+  ];
 }
 
 async function runCurrent() {
@@ -123,40 +153,36 @@ async function runCurrent() {
 function resultsPanel() {
   const sc = state.scenario;
   const last = state.lastSim;
-  if (!last) return h("section", { class: "panel" }, h("h2", null, "Results"), h("p", { class: "dim" }, "Run the simulator to see how often each goal is met."));
+  if (!last) return [h("h2", null, "Results"), h("p", { class: "dim" }, "Run the simulator to see how often each goal is met.")];
   const r = last.result;
   const ts = targets(sc);
-  if (r.targetFall.length !== ts.length || r.classStop.length !== sc.classes.length)
-    return h("section", { class: "panel" }, h("h2", null, "Results"), h("p", { class: "dim" }, "The scenario has changed since the last run. Run the simulator again."));
+  if (r.targetFall.length !== ts.length || r.classStop.length !== sc.classes.length || r.ships === undefined)
+    return [h("h2", null, "Results"), h("p", { class: "dim" }, "The scenario has changed since the last run. Run the simulator again.")];
   const nf = r.battles * r.formations;
-  const ns = r.battles * (r.ships ?? r.formations);
-  return h(
-    "section",
-    { class: "panel" },
+  const ns = r.battles * r.ships;
+  return [
     h("h2", null, "Results ", h("span", { class: "dim small" }, `— ${last.label}, ${r.battles} battles`)),
-    h("h3", null, "Goals met (share of battles)"),
+    h("h3", null, "Goals met (share of battles)", tip(TIPS.goals)),
     sc.classes.map((k, i) =>
-      bar({ label: `${k.name}${k.primary ? " ★" : ""}`, sub: `stop ≥ ${pct(k.goal)}`, value: r.goalMet[i], n: r.battles }),
+      bar({ label: `${k.name}${k.primary ? " ★" : ""}`, sub: `stop ≥ ${pct(k.goal)} of ${r.ships} ships`, value: r.goalMet[i], n: r.battles }),
     ),
     bar({ label: h("strong", null, "All primary goals"), value: r.allPrimary, n: r.battles }),
-    h("h3", null, "Ships stopped (share of ships, all lanes)"),
+    h("h3", null, "Ships stopped (share of ships, all lanes)", tip(TIPS.stopped)),
     sc.classes.map((k, i) => bar({ label: k.name, value: r.classStop[i], n: ns, marker: k.goal, markerLabel: "goal", sense: "good" })),
-    h("h3", null, "Targets falling (share of formations)"),
+    h("h3", null, "Targets falling (share of formations)", tip(TIPS.targets)),
     ts.map((t) => bar({ label: t.label, value: r.targetFall[t.index], n: nf })),
-    h("h3", null, "Side effects"),
+    h("h3", null, "Side effects", tip(TIPS.side)),
     bar({ label: "Drones stranded", sub: "mean share of swarm per formation", value: r.stranded, n: nf }),
     r.falseKill === null
       ? h("p", { class: "dim" }, "False kills: none possible, no target is immune under these assumptions.")
       : bar({ label: "False kills", sub: "formations with ≥ 1", value: r.falseKill, n: nf, marker: sc.alpha, markerLabel: "Command limit", sense: "bad", max: Math.max(0.1, sc.alpha * 3) }),
     h("p", { class: "hint" }, "Whiskers show 95% Monte Carlo intervals. The tick on each bar is the goal (or Command's limit for false kills)."),
-  );
+  ];
 }
 
 function comparePanel() {
   const saved = state.saved;
-  return h(
-    "section",
-    { class: "panel" },
+  return [
     h("h2", null, "Compare designs"),
     saved.length === 0
       ? h("p", { class: "dim" }, "Save designs in Setup to compare them here under the same assumptions and seed.")
@@ -186,7 +212,7 @@ function comparePanel() {
           h("p", { class: "dim small" }, "The current design is always included."),
           h("button", { disabled: running, onClick: () => runComparison() }, "Compare under these assumptions"),
         ),
-  );
+  ];
 }
 
 async function runComparison() {
@@ -222,9 +248,10 @@ function comparisonPanel() {
   if (!comparison) return null;
   const sc = state.scenario;
   const c = comparison;
-  if (c.results.some((r) => r.goalMet.length !== sc.classes.length)) return null;
+  if (c.results.some((r) => r.goalMet.length !== sc.classes.length || r.ships === undefined)) return null;
   const n = c.results[0].battles;
   const nf = n * c.results[0].formations;
+  const ns = n * c.results[0].ships;
   const cell = (v: number, nn: number, best: boolean) => h("td", { class: best ? "best" : "" }, pct(v, 1), h("span", { class: "dim small" }, ` ±${(1.96 * mcse(v, nn) * 100).toFixed(1)}`));
   const row = (label: string, vals: number[], nn: number, higherBetter = true) => {
     const best = higherBetter ? Math.max(...vals) : Math.min(...vals);
@@ -233,7 +260,7 @@ function comparisonPanel() {
   const rows = [
     row("All primary goals", c.results.map((r) => r.allPrimary), n),
     ...sc.classes.map((k, i) => row(`Goal: ${k.name} ≥ ${pct(k.goal)}`, c.results.map((r) => r.goalMet[i]), n)),
-    ...sc.classes.map((k, i) => row(`Stopped: ${k.name}`, c.results.map((r) => r.classStop[i]), nf)),
+    ...sc.classes.map((k, i) => row(`Stopped: ${k.name}`, c.results.map((r) => r.classStop[i]), ns)),
     row("Drones stranded", c.results.map((r) => r.stranded), nf, false),
   ];
   if (c.results.every((r) => r.falseKill !== null)) rows.push(row("False kills", c.results.map((r) => r.falseKill!), nf, false));

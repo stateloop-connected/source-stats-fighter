@@ -704,3 +704,46 @@ ol.log li {
 .route-label:active {
   cursor: grabbing;
 }
+
+/* tooltips */
+.tip {
+  position: relative;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tip-btn {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--cyan);
+  border-color: var(--cyan);
+  background: transparent;
+}
+.tip-text {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  left: -8px;
+  top: 24px;
+  width: min(320px, 80vw);
+  padding: 8px 10px;
+  background: #0b1824;
+  border: 1px solid var(--cyan);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 1.5;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+.tip:hover .tip-text,
+.tip:focus-within .tip-text,
+.tip.open .tip-text {
+  display: block;
+}

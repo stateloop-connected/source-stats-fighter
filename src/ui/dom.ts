@@ -142,3 +142,32 @@ export function fill(el: Element, ...children: (Child | Child[])[]) {
 export function add(el: Element, ...children: (Child | Child[])[]) {
   append(el, children);
 }
+
+/**
+ * A small "?" that explains a heading. Shows on hover and keyboard focus; a tap or click pins it open.
+ */
+export function tip(text: string) {
+  const box = h("span", { class: "tip-text", role: "tooltip" }, text);
+  const btn = h("button", { type: "button", class: "tip-btn", "aria-label": `Explain: ${text}` }, "?");
+  const wrap = h("span", { class: "tip" }, btn, box);
+  // keep the box inside the window
+  const place = () =>
+    requestAnimationFrame(() => {
+      box.style.left = "-8px";
+      const r = box.getBoundingClientRect();
+      const over = r.right - (document.documentElement.clientWidth - 8);
+      if (over > 0) box.style.left = `${-8 - over}px`;
+    });
+  wrap.addEventListener("pointerenter", place);
+  btn.addEventListener("focus", place);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    wrap.classList.toggle("open");
+    place();
+  });
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") wrap.classList.remove("open");
+  });
+  btn.addEventListener("blur", () => wrap.classList.remove("open"));
+  return wrap;
+}
