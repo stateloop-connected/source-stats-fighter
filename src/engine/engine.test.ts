@@ -5,6 +5,8 @@ import { Rng, deriveSeed } from "./rng";
 import { drawShots, simulate, runBattle, runFormation, goalCount, mcse, type SimResult } from "./battle";
 import { compile, defaultDesign, defaultScenario, effectsFor, information, type Problem } from "./model";
 import { fromJSON, toJSON, toR, toTikZ } from "./export";
+import { briefingText, rate } from "./briefing";
+import { edgeGeometry } from "./geometry";
 
 /* ---------- helpers ---------- */
 
@@ -381,5 +383,32 @@ describe("export", () => {
     const badShare = JSON.parse(toJSON(s, d));
     badShare.design.routes[0].share = "lots";
     expect(() => fromJSON(JSON.stringify(badShare))).toThrow(/wormhole/);
+  });
+
+  it("writes moved edge labels into the TikZ export, and the edge passes through the label", () => {
+    const s = defaultScenario();
+    const d = defaultDesign();
+    d.routes[0].label = { x: 30, y: -40 };
+    const tex = toTikZ(s, d);
+    expect(tex.match(/\\draw\[edge\]/g)!.length).toBe(4);
+    const a = { x: 0, y: 0 };
+    const b = { x: 300, y: 0 };
+    const g = edgeGeometry(a, b, { x: 30, y: -40 }, 0);
+    const mid = { x: 0.25 * g.p0.x + 0.5 * g.c.x + 0.25 * g.p2.x, y: 0.25 * g.p0.y + 0.5 * g.c.y + 0.25 * g.p2.y };
+    expect(mid.x).toBeCloseTo(g.label.x, 10);
+    expect(mid.y).toBeCloseTo(g.label.y, 10);
+    expect(g.label.x - g.base.x).toBeCloseTo(30, 10);
+  });
+});
+
+describe("briefing", () => {
+  it("states goals, ships, energy and intelligence in standard sentences", () => {
+    const s = defaultScenario();
+    const text = briefingText(s).join(" ");
+    expect(text).toContain("Your primary goal is to stop at least 80% of the Attack ships.");
+    expect(text).toContain("40 ships of each class will come; you must stop 32 Attack ships");
+    expect(text).toContain("360 units of energy");
+    expect(text).toContain("Intelligence rates the Plasma Lance as strong against Attack ships and uncertain against Recon and Supply ships.");
+    expect(rate({ guess: 0.3, low: 0.2, high: 0.4 })).toBe("moderate");
   });
 });

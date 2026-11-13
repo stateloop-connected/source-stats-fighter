@@ -639,3 +639,42 @@ ol.log li {
 .stepper button.step:last-child {
   border-radius: 0 3px 3px 0;
 }
+
+/* setup v0.2 */
+.briefing p {
+  margin: 4px 0 8px;
+  max-width: 900px;
+  line-height: 1.6;
+}
+.network-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 14px;
+  align-items: start;
+}
+.network-wrap .inspector {
+  margin-top: 0;
+  border-top: none;
+  border-left: 1px solid var(--panel-border);
+  padding: 0 0 0 14px;
+}
+@media (max-width: 900px) {
+  .network-wrap {
+    grid-template-columns: 1fr;
+  }
+  .network-wrap .inspector {
+    border-left: none;
+    border-top: 1px solid var(--panel-border);
+    padding: 8px 0 0;
+  }
+}
+.network-canvas svg.network {
+  margin: 0 auto;
+  max-height: 640px;
+}
+.route-label {
+  cursor: grab;
+}
+.route-label:active {
+  cursor: grabbing;
+}

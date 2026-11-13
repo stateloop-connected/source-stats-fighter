@@ -1,4 +1,5 @@
 import { designArrays, targets, type Design, type Scenario } from "./model";
+import { NODE_R, nodePos, routeGeometry } from "./geometry";
 import { DATA_VERSION, checkDesign, checkScenario, upgrade } from "./migrate";
 
 export interface SaveFile {
@@ -79,22 +80,34 @@ const texEsc = (s: string) => s.replace(/([\\{}$&#^_%~])/g, "\\$1");
 
 export function toTikZ(s: Scenario, d: Design): string {
   const ts = targets(s);
-  const { w, G } = designArrays(s, d);
+  const { w } = designArrays(s, d);
+  const idx = new Map(ts.map((t) => [t.key, t]));
+  // same layout as the editor: 50 px = 1 cm, y pointing down
+  const cm = (v: number) => fmt(Math.round((v / 50) * 100) / 100);
+  const P = (p: { x: number; y: number }) => `(${cm(p.x)}, ${cm(-p.y)})`;
   const lines: string[] = [];
-  lines.push(`% Alpha Wars ’89 — design "${texEsc(d.name)}"`);
+  lines.push(`% Alpha Wars ’89 — design "${texEsc(d.name)}" for scenario "${texEsc(s.name)}"`);
+  lines.push(`% One node per target (cannon vs ship class) with its initial weight; edges carry transition weights.`);
+  lines.push(`% Ship classes are rows and cannons are columns, as in the game's editor.`);
   lines.push(`% requires \\usetikzlibrary{arrows.meta}`);
   lines.push(`\\begin{tikzpicture}[`);
-  lines.push(`  hyp/.style={circle, draw, thick, minimum size=2cm, align=center, font=\\footnotesize},`);
-  lines.push(`  edge/.style={-{Stealth}, thick, bend left=15},`);
+  lines.push(`  hyp/.style={circle, draw, thick, minimum size=${fmt((2 * NODE_R) / 50)}cm, inner sep=1pt, align=center, font=\\scriptsize},`);
+  lines.push(`  edge/.style={-{Stealth}, thick},`);
   lines.push(`  lbl/.style={fill=white, inner sep=1pt, font=\\scriptsize}]`);
   ts.forEach((t, i) => {
-    lines.push(`  \\node[hyp] (H${i + 1}) at (${t.k * 3.2}, ${-t.c * 3.2}) {${texEsc(t.cannon.name)}\\\\${texEsc(t.cls.name)}\\\\$${fmt(w[i])}$};`);
+    lines.push(`  \\node[hyp] (H${i + 1}) at ${P(nodePos(t.c, t.k))} {${texEsc(t.cannon.name)}\\\\${texEsc(t.cls.name)}\\\\$${fmt(w[i])}$};`);
   });
-  G.forEach((row, i) =>
-    row.forEach((g, j) => {
-      if (g > 0) lines.push(`  \\draw[edge] (H${i + 1}) to node[lbl] {$${fmt(g)}$} (H${j + 1});`);
-    }),
-  );
+  for (const r of d.routes) {
+    const a = idx.get(r.from);
+    const b = idx.get(r.to);
+    if (!a || !b || !(r.share > 0)) continue;
+    const g = routeGeometry(a, b, r);
+    // the editor's quadratic curve written as a cubic: controls 2/3 of the way to the quadratic control point
+    const c1 = { x: g.p0.x + (2 / 3) * (g.c.x - g.p0.x), y: g.p0.y + (2 / 3) * (g.c.y - g.p0.y) };
+    const c2 = { x: g.p2.x + (2 / 3) * (g.c.x - g.p2.x), y: g.p2.y + (2 / 3) * (g.c.y - g.p2.y) };
+    lines.push(`  \\draw[edge] ${P(g.p0)} .. controls ${P(c1)} and ${P(c2)} .. ${P(g.p2)};`);
+    lines.push(`  \\node[lbl] at ${P(g.label)} {$${fmt(r.share)}$};`);
+  }
   lines.push(`\\end{tikzpicture}`);
   return lines.join("\n") + "\n";
 }

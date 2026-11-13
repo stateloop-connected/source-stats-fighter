@@ -1,10 +1,11 @@
-import { h, numInput, download, newId, pct, add } from "./dom";
+import { h, numInput, download, newId, pct, add, num } from "./dom";
 import { state, commit, notify, cloneDesign, resetAll, loadNotes } from "./state";
 import { panel, type Panel } from "./panel";
 import { renderNetwork, type Selection } from "./network";
-import { GC, MAX_CANNONS, MAX_CLASSES, corrKey, energyUsed, targets, validateDesign, defaultScenario, type Design } from "../engine/model";
+import { GC, MAX_CANNONS, MAX_CLASSES, corrKey, energyUsed, information, targets, validateDesign, defaultScenario, type Design } from "../engine/model";
 import { toJSON, fromJSON, toR, toTikZ } from "../engine/export";
 import { shield } from "../engine/normal";
+import { briefingText } from "../engine/briefing";
 
 let selection: Selection = null;
 let scenarioOpen = false;
@@ -47,8 +48,8 @@ function select(sel: Selection) {
 function briefing() {
   const sc = state.scenario;
   return [
-    h("h2", null, "Briefing"),
-    h("p", null, `${sc.name}: ${sc.cannons.length} cannon(s), ${sc.classes.length} ship class(es), ${sc.formations} formations.`),
+    h("h2", null, "Briefing ", h("span", { class: "dim small" }, `— ${sc.name}`)),
+    h("div", { class: "briefing" }, briefingText(sc).map((t) => h("p", null, t))),
     loadNotes.map((n) => h("p", { class: "hint" }, n)),
   ];
 }
@@ -177,7 +178,7 @@ function scenarioEditor(el: HTMLElement) {
     det,
     general,
     h("div", { class: "row wrap top" }, h("div", null, cannons, addCannon), h("div", null, classes, addClass)),
-    h("p", { class: "hint" }, "Effectiveness is a standardised effect: the expected shot strength is effect × √information, where information = 1 / (1/cannon energy + 1/Ground Control energy). Zero means the class is immune."),
+    h("p", { class: "hint" }, "Effectiveness is a standardised effect: the expected impact is effect × √information, where information = 1 / (1/cannon energy + 1/Ground Control energy). Zero means the class is immune."),
     effects,
     corrRows.length ? h("div", { class: "row wrap" }, h("span", { class: "dim" }, "Correlation between classes:"), corrRows) : null,
     h(
@@ -245,7 +246,7 @@ function energyPanel() {
     h("h2", null, "Energy"),
     rows,
     h("div", { class: "row" }, h("span", { class: "dim" }, "Used"), h("div", { class: "meter" }, bar), totalLabel),
-    h("p", { class: "hint" }, "More energy makes shots stronger. Ground Control is shared: a cannon is only as good as its tracking."),
+    h("p", { class: "hint" }, "More energy means a stronger impact. Ground Control is shared: a cannon is only as good as its tracking."),
   ];
 }
 
@@ -345,6 +346,14 @@ function redrawNetwork() {
   if (!svgEl) return;
   renderNetwork(svgEl, state.scenario, state.design, selection, {
     select,
+    moveLabel: (i, off) =>
+      commit((st) => {
+        const r = st.design.routes[i];
+        if (!r) return;
+        if (off) r.label = off;
+        else delete r.label;
+        selection = { kind: "route", index: i };
+      }),
     addRoute: (from, to) => {
       commit((st) => {
         const d = st.design;
@@ -369,9 +378,12 @@ function networkView() {
   redrawNetwork();
   return [
     h("h2", null, "Drones & wormholes"),
-    h("p", { class: "hint" }, "Click a target to set its share of the swarm. Drag from one target to another to open a wormhole; click a wormhole to set the share of drones that take it. The ring shows each target's drones; fewer drones mean a stronger shield."),
-    svgEl,
-    inspector(),
+    h(
+      "p",
+      { class: "hint" },
+      "Each circle is a target: one cannon against one ship class. Click a target to set its share of the swarm; fewer drones mean a stronger shield, and a target without drones cannot fall. Drag from one target to another to open a wormhole. Click a wormhole's label to set its share, or drag the label to bend the wormhole.",
+    ),
+    h("div", { class: "network-wrap" }, h("div", { class: "network-canvas" }, svgEl), inspector()),
   ];
 }
 
@@ -409,6 +421,7 @@ function inspector() {
           "Close wormhole",
         ),
         h("button", { class: "small", onClick: () => select({ kind: "node", key: r.from }) }, "Select source"),
+        r.label ? h("button", { class: "small", title: "Put the label back in its automatic place", onClick: () => commit((st) => delete st.design.routes[i].label) }, "Reset label") : null,
       ),
     );
     return box;
@@ -430,7 +443,7 @@ function inspector() {
       { class: "dim" },
       `Intel: ${intel.guess} (range ${intel.low}–${intel.high})`,
       sc.hideTruth ? "" : ` · true: ${sc.trueEffect[key]}`,
-      ` · shield now ${shield(w, sc.alpha).toFixed(2)}`,
+      ` · shield now ${num(shield(w, sc.alpha))} · expected impact ${num(intel.guess * Math.sqrt(information(d.energy[t.cannon.id] ?? 0, d.energy[GC] ?? 0)), 1)}`,
     ),
     h(
       "div",
