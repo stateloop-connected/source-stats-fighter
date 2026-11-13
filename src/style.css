@@ -610,3 +610,32 @@ ol.log li {
 .prose li {
   line-height: 1.6;
 }
+
+/* stepper */
+.stepper {
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+}
+.stepper input.num {
+  background: #050b12;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
+  padding: 3px 4px;
+  text-align: center;
+}
+.stepper button.step {
+  padding: 0 8px;
+  min-width: 26px;
+  font-size: 15px;
+  line-height: 1;
+  border-radius: 3px 0 0 3px;
+  user-select: none;
+  touch-action: manipulation;
+}
+.stepper button.step:last-child {
+  border-radius: 0 3px 3px 0;
+}

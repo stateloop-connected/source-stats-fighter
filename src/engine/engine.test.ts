@@ -328,4 +328,23 @@ describe("export", () => {
     expect(tex).toContain("\\begin{tikzpicture}");
     expect(tex.match(/\\draw\[edge\]/g)!.length).toBe(4);
   });
+
+  it("upgrades version 1 files and rejects broken or newer ones", () => {
+    const s = defaultScenario();
+    const d = defaultDesign();
+    const v1 = JSON.parse(toJSON(s, d));
+    v1.version = 1;
+    const up = fromJSON(JSON.stringify(v1));
+    expect(up.version).toBe(2);
+    expect(up.notes.length).toBe(1);
+    expect(up.design).toEqual(d);
+    const newer = { ...v1, version: 99 };
+    expect(() => fromJSON(JSON.stringify(newer))).toThrow(/newer version/);
+    const badGoal = JSON.parse(toJSON(s, d));
+    badGoal.scenario.classes[0].goal = 3;
+    expect(() => fromJSON(JSON.stringify(badGoal))).toThrow(/goal/);
+    const badShare = JSON.parse(toJSON(s, d));
+    badShare.design.routes[0].share = "lots";
+    expect(() => fromJSON(JSON.stringify(badShare))).toThrow(/wormhole/);
+  });
 });

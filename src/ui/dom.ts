@@ -1,4 +1,4 @@
-type Child = Node | string | number | null | undefined | false;
+export type Child = Node | string | number | null | undefined | false;
 
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Record<string, any> | null, ...children: (Child | Child[])[]): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
@@ -41,23 +41,79 @@ export function s(tag: string, attrs?: Record<string, any> | null, ...children: 
 export const pct = (x: number, digits = 0) => `${(x * 100).toFixed(digits)}%`;
 export const num = (x: number, digits = 2) => (Number.isFinite(x) ? x.toFixed(digits) : x > 0 ? "∞" : "–∞");
 
-/** A number input that commits on change. Values are shown and entered in `scale` units (e.g. 100 for percent). */
-export function numInput(value: number, onCommit: (v: number) => void, opts: { min?: number; max?: number; step?: number; scale?: number; width?: string; title?: string } = {}) {
+export interface NumOpts {
+  min?: number;
+  max?: number;
+  step?: number;
+  /** Values are shown and entered in `scale` units (e.g. 100 for percent). */
+  scale?: number;
+  width?: string;
+  title?: string;
+}
+
+const tidy = (x: number) => Math.round(x * 1e6) / 1e6;
+
+/**
+ * Number field with minus and plus buttons. The buttons do not take focus, arrow keys step the value
+ * (Shift for ten steps) without scrolling the page, and typed values commit on Enter or when leaving the field.
+ */
+export function numInput(value: number, onCommit: (v: number) => void, opts: NumOpts = {}) {
   const scale = opts.scale ?? 1;
-  const shown = Math.round(value * scale * 1e6) / 1e6;
-  return h("input", {
-    type: "number",
+  const step = opts.step ?? 1;
+  const clamp = (v: number) => Math.min(opts.max ?? Infinity, Math.max(opts.min ?? -Infinity, v));
+  let shown = tidy(value * scale);
+  const input = h("input", {
+    type: "text",
+    inputmode: "decimal",
+    class: "num",
     value: String(shown),
-    min: opts.min,
-    max: opts.max,
-    step: opts.step ?? "any",
     title: opts.title,
-    style: `width:${opts.width ?? "5.5em"}`,
-    onChange: (e: Event) => {
-      const v = parseFloat((e.target as HTMLInputElement).value);
-      if (Number.isFinite(v)) onCommit(v / scale);
-    },
+    "aria-label": opts.title,
+    style: `width:${opts.width ?? "4.5em"}`,
   });
+  const set = (v: number) => {
+    v = tidy(clamp(v));
+    input.value = String(v);
+    if (v === shown) return;
+    shown = v;
+    onCommit(Math.round((v / scale) * 1e9) / 1e9);
+  };
+  const nudge = (dir: number, big: boolean) => {
+    const cur = parseFloat(input.value);
+    const base = Number.isFinite(cur) ? cur : shown;
+    set(base + dir * step * (big ? 10 : 1));
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      nudge(e.key === "ArrowUp" ? 1 : -1, e.shiftKey);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      commitTyped();
+    } else if (e.key === "Escape") {
+      input.value = String(shown);
+    }
+  });
+  const commitTyped = () => {
+    const v = parseFloat(input.value.replace(",", "."));
+    if (Number.isFinite(v)) set(v);
+    else input.value = String(shown);
+  };
+  input.addEventListener("change", commitTyped);
+  const btn = (dir: number, label: string) =>
+    h(
+      "button",
+      {
+        type: "button",
+        class: "step",
+        tabindex: "-1",
+        "aria-label": dir > 0 ? "increase" : "decrease",
+        onPointerdown: (e: Event) => e.preventDefault(),
+        onClick: (e: MouseEvent) => nudge(dir, e.shiftKey),
+      },
+      label,
+    );
+  return h("span", { class: "stepper" }, btn(-1, "−"), input, btn(1, "+"));
 }
 
 export function download(filename: string, text: string, type = "text/plain") {

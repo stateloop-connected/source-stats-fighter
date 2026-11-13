@@ -1,5 +1,6 @@
 import { corrKey, defaultDesign, defaultScenario, GC, targetKey, type Assumption, type Design, type Scenario } from "../engine/model";
 import type { SimResult } from "../engine/battle";
+import { DATA_VERSION, checkDesign, checkScenario, upgrade } from "../engine/migrate";
 
 export interface SavedDesign {
   id: string;
@@ -22,7 +23,8 @@ export interface AppState {
   lastSim: { result: SimResult; label: string } | null;
 }
 
-const KEY = "alphawars89.state.v1";
+const KEY = "alphawars89.state";
+const OLD_KEYS = ["alphawars89.state.v1"];
 
 function fresh(): AppState {
   return {
@@ -34,17 +36,43 @@ function fresh(): AppState {
   };
 }
 
+/** Notes about upgraded saved state, shown once on the Setup screen. */
+export const loadNotes: string[] = [];
+
 function load(): AppState {
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const st = JSON.parse(raw) as AppState;
-      if (st && st.scenario && st.design) return { ...fresh(), ...st };
-    }
+    raw = localStorage.getItem(KEY);
+    if (raw === null) for (const k of OLD_KEYS) raw ??= localStorage.getItem(k);
   } catch {
-    /* storage unavailable or corrupt */
+    return fresh();
   }
-  return fresh();
+  if (!raw) return fresh();
+  try {
+    const st = JSON.parse(raw);
+    loadNotes.push(...upgrade(st.version));
+    const f = fresh();
+    const out: AppState = {
+      scenario: checkScenario(st.scenario),
+      design: checkDesign(st.design),
+      saved: Array.isArray(st.saved)
+        ? st.saved.flatMap((x: any) => {
+            try {
+              return [{ id: String(x.id), design: checkDesign(x.design), savedAt: Number(x.savedAt) || 0 }];
+            } catch {
+              return [];
+            }
+          })
+        : [],
+      sim: { ...f.sim, ...(st.sim ?? {}) },
+      lastSim: (st.version ?? 1) === DATA_VERSION ? (st.lastSim ?? null) : null,
+    };
+    normalize(out);
+    return out;
+  } catch (e) {
+    loadNotes.push(`Saved state could not be read (${(e as Error).message}) and was replaced by the default scenario.`);
+    return fresh();
+  }
 }
 
 export const state: AppState = load();
@@ -57,10 +85,25 @@ export function subscribe(fn: () => void) {
 
 export function persist() {
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    localStorage.setItem(KEY, JSON.stringify({ version: DATA_VERSION, ...state }));
+    for (const k of OLD_KEYS) localStorage.removeItem(k);
   } catch {
     /* ignore */
   }
+}
+
+let scheduled = false;
+/**
+ * Tell the screens that state changed. Deferred to a fresh task so that focus has already moved
+ * (after Tab or a click) when panels redraw; panels then restore focus to the same place.
+ */
+export function notify() {
+  if (scheduled) return;
+  scheduled = true;
+  setTimeout(() => {
+    scheduled = false;
+    listeners.forEach((l) => l());
+  }, 0);
 }
 
 /** Mutate state, save, and notify listeners (unless quiet). */
@@ -68,14 +111,14 @@ export function commit(fn: (s: AppState) => void, quiet = false) {
   fn(state);
   normalize(state);
   persist();
-  if (!quiet) listeners.forEach((l) => l());
+  if (!quiet) notify();
 }
 
 export function resetAll() {
   const f = fresh();
   Object.assign(state, f);
   persist();
-  listeners.forEach((l) => l());
+  notify();
 }
 
 /** Keep design and scenario consistent after structural edits. */

@@ -1,18 +1,19 @@
 import { designArrays, targets, type Design, type Scenario } from "./model";
+import { DATA_VERSION, checkDesign, checkScenario, upgrade } from "./migrate";
 
 export interface SaveFile {
   format: "alpha-wars-89";
-  version: 1;
+  version: number;
   scenario: Scenario;
   design: Design;
 }
 
 export function toJSON(s: Scenario, d: Design): string {
-  const f: SaveFile = { format: "alpha-wars-89", version: 1, scenario: s, design: d };
+  const f: SaveFile = { format: "alpha-wars-89", version: DATA_VERSION, scenario: s, design: d };
   return JSON.stringify(f, null, 2);
 }
 
-export function fromJSON(text: string): SaveFile {
+export function fromJSON(text: string): SaveFile & { notes: string[] } {
   let raw: any;
   try {
     raw = JSON.parse(text);
@@ -20,13 +21,10 @@ export function fromJSON(text: string): SaveFile {
     throw new Error("This file is not valid JSON.");
   }
   if (!raw || raw.format !== "alpha-wars-89") throw new Error("This is not an Alpha Wars ’89 file.");
-  const s = raw.scenario;
-  const d = raw.design;
-  const isObj = (x: any) => x && typeof x === "object";
-  if (!isObj(s) || !Array.isArray(s.cannons) || !Array.isArray(s.classes) || !isObj(s.trueEffect) || !isObj(s.intel))
-    throw new Error("The scenario in this file is incomplete.");
-  if (!isObj(d) || !isObj(d.energy) || !isObj(d.weights) || !Array.isArray(d.routes)) throw new Error("The design in this file is incomplete.");
-  return raw as SaveFile;
+  const notes = upgrade(raw.version);
+  const scenario = checkScenario(raw.scenario);
+  const design = checkDesign(raw.design);
+  return { format: "alpha-wars-89", version: DATA_VERSION, scenario, design, notes };
 }
 
 export function fmt(x: number): string {

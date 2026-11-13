@@ -1,33 +1,66 @@
 import { h, numInput, download, newId, pct, add } from "./dom";
-import { state, commit, cloneDesign, resetAll } from "./state";
+import { state, commit, notify, cloneDesign, resetAll, loadNotes } from "./state";
+import { panel, type Panel } from "./panel";
 import { renderNetwork, type Selection } from "./network";
 import { GC, MAX_CANNONS, MAX_CLASSES, corrKey, energyUsed, targets, validateDesign, defaultScenario, type Design } from "../engine/model";
 import { toJSON, fromJSON, toR, toTikZ } from "../engine/export";
 import { shield } from "../engine/normal";
 
 let selection: Selection = null;
-let briefingOpen = true;
+let scenarioOpen = false;
 let exportFormat: "json" | "r" | "tikz" = "r";
 let importMessage = "";
 
+let mountedIn: HTMLElement | null = null;
+let panels: Panel[] = [];
+
+const sec = (cls = "panel") => h("section", { class: cls });
+const det = () => h("details", { class: "panel" });
+
 export function renderSetup(root: HTMLElement) {
-  root.replaceChildren(
-    briefing(),
-    h(
-      "div",
-      { class: "setup-grid" },
-      h("div", { class: "col-side" }, energyPanel(), presetsPanel(), validationPanel()),
-      h("div", { class: "col-main" }, networkPanel()),
-    ),
-    h("div", { class: "setup-grid" }, h("div", { class: "col-side" }, savedPanel()), h("div", { class: "col-main" }, exportPanel())),
-  );
+  if (mountedIn !== root) {
+    mountedIn = root;
+    const st = () => state;
+    panels = [
+      panel(briefing, () => [st().scenario, loadNotes.length], sec()),
+      panel(validationPanel, () => [st().scenario, st().design], sec()),
+      panel(networkView, () => [st().scenario, st().design, selection], sec("panel network-panel")),
+      panel(presetsPanel, () => 0, sec()),
+      panel(energyPanel, () => [st().scenario.cannons, st().scenario.energyAvailable, st().design.energy], sec()),
+      panel(scenarioEditor, () => st().scenario, det()),
+      panel(savedPanel, () => [st().saved, st().design.name, st().scenario.cannons], sec()),
+      panel(exportPanel, () => [st().scenario, st().design, exportFormat, importMessage], sec()),
+    ];
+    root.replaceChildren(...panels.map((p) => p.el));
+  }
+  for (const p of panels) p.update();
 }
 
-/* ---------------- briefing / scenario ---------------- */
+/** Select something in the network editor and redraw. */
+function select(sel: Selection) {
+  selection = sel;
+  notify();
+}
+
+/* ---------------- briefing ---------------- */
 
 function briefing() {
   const sc = state.scenario;
-  const det = h("details", { class: "panel", open: briefingOpen, onToggle: (e: Event) => (briefingOpen = (e.target as HTMLDetailsElement).open) });
+  return [
+    h("h2", null, "Briefing"),
+    h("p", null, `${sc.name}: ${sc.cannons.length} cannon(s), ${sc.classes.length} ship class(es), ${sc.formations} formations.`),
+    loadNotes.map((n) => h("p", { class: "hint" }, n)),
+  ];
+}
+
+/* ---------------- scenario editor ---------------- */
+
+function scenarioEditor(el: HTMLElement) {
+  const sc = state.scenario;
+  const box = el as HTMLDetailsElement;
+  box.open = scenarioOpen;
+  box.ontoggle = () => (scenarioOpen = box.open);
+  const det = h("div");
   const hidden = sc.hideTruth;
   const ts = targets(sc);
 
@@ -139,9 +172,9 @@ function briefing() {
       );
     }
 
+  const summary = h("summary", null, h("span", { class: "panel-title" }, "Scenario controls"), h("span", { class: "dim" }, ` — ${sc.name}`));
   add(
     det,
-    h("summary", null, h("span", { class: "panel-title" }, "Briefing"), h("span", { class: "dim" }, ` — ${sc.name}: ${sc.cannons.length} cannon(s), ${sc.classes.length} ship class(es), ${sc.formations} formations`)),
     general,
     h("div", { class: "row wrap top" }, h("div", null, cannons, addCannon), h("div", null, classes, addClass)),
     h("p", { class: "hint" }, "Effectiveness is a standardised effect: the expected shot strength is effect × √information, where information = 1 / (1/cannon energy + 1/Ground Control energy). Zero means the class is immune."),
@@ -172,7 +205,7 @@ function briefing() {
       ),
     ),
   );
-  return det;
+  return [summary, det];
 }
 
 /* ---------------- energy ---------------- */
@@ -180,7 +213,6 @@ function briefing() {
 function energyPanel() {
   const sc = state.scenario;
   const d = state.design;
-  const used = energyUsed(sc, d);
   const totalLabel = h("span", null);
   const bar = h("div", { class: "meter-fill" });
   const updateTotal = () => {
@@ -190,7 +222,6 @@ function energyPanel() {
     bar.style.width = `${Math.min(100, (u / Math.max(1, sc.energyAvailable)) * 100)}%`;
     bar.className = u > sc.energyAvailable ? "meter-fill over" : "meter-fill";
   };
-  void used;
   const arms = [...sc.cannons.map((c) => ({ id: c.id, name: c.name })), { id: GC, name: "Ground Control" }];
   const rows = arms.map((a) => {
     const val = h("span", { class: "val" }, String(d.energy[a.id] ?? 0));
@@ -202,24 +233,20 @@ function energyPanel() {
       value: String(d.energy[a.id] ?? 0),
       onInput: (e: Event) => {
         const v = parseInt((e.target as HTMLInputElement).value, 10);
-        commit((st) => (st.design.energy[a.id] = v), true);
+        commit((st) => (st.design.energy[a.id] = v));
         val.textContent = String(v);
         updateTotal();
-        redrawNetwork();
       },
-      onChange: () => commit(() => {}),
     });
     return h("div", { class: "energy-row" }, h("span", { class: "name" }, a.name), slider, val);
   });
   updateTotal();
-  return h(
-    "section",
-    { class: "panel" },
+  return [
     h("h2", null, "Energy"),
     rows,
     h("div", { class: "row" }, h("span", { class: "dim" }, "Used"), h("div", { class: "meter" }, bar), totalLabel),
     h("p", { class: "hint" }, "More energy makes shots stronger. Ground Control is shared: a cannon is only as good as its tracking."),
-  );
+  ];
 }
 
 /* ---------------- presets ---------------- */
@@ -232,9 +259,7 @@ function presetsPanel() {
       selection = null;
     });
   const keys = () => targets(state.scenario).map((t) => t.key);
-  return h(
-    "section",
-    { class: "panel" },
+  return [
     h("h2", null, "Presets"),
     h(
       "div",
@@ -293,16 +318,14 @@ function presetsPanel() {
       ),
     ),
     h("p", { class: "hint" }, "Strict sequence orders targets by the intelligence best guess."),
-  );
+  ];
 }
 
 /* ---------------- validation ---------------- */
 
 function validationPanel() {
   const issues = validateDesign(state.scenario, state.design);
-  return h(
-    "section",
-    { class: "panel" },
+  return [
     h("h2", null, "Status"),
     issues.length === 0
       ? h("p", { class: "ok" }, "✔ Design is ready for battle.")
@@ -311,7 +334,7 @@ function validationPanel() {
           { class: "issues" },
           issues.map((i) => h("li", { class: i.level }, i.level === "error" ? "✖ " : "⚠ ", i.message)),
         ),
-  );
+  ];
 }
 
 /* ---------------- network ---------------- */
@@ -321,10 +344,7 @@ let svgEl: SVGSVGElement | null = null;
 function redrawNetwork() {
   if (!svgEl) return;
   renderNetwork(svgEl, state.scenario, state.design, selection, {
-    select: (sel) => {
-      selection = sel;
-      commit(() => {});
-    },
+    select,
     addRoute: (from, to) => {
       commit((st) => {
         const d = st.design;
@@ -341,18 +361,18 @@ function redrawNetwork() {
   });
 }
 
-function networkPanel() {
-  svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
-  svgEl.classList.add("network");
+function networkView() {
+  if (!svgEl) {
+    svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
+    svgEl.classList.add("network");
+  }
   redrawNetwork();
-  return h(
-    "section",
-    { class: "panel" },
+  return [
     h("h2", null, "Drones & wormholes"),
     h("p", { class: "hint" }, "Click a target to set its share of the swarm. Drag from one target to another to open a wormhole; click a wormhole to set the share of drones that take it. The ring shows each target's drones; fewer drones mean a stronger shield."),
     svgEl,
     inspector(),
-  );
+  ];
 }
 
 function inspector() {
@@ -388,7 +408,7 @@ function inspector() {
           },
           "Close wormhole",
         ),
-        h("button", { class: "small", onClick: () => ((selection = { kind: "node", key: r.from }), commit(() => {})) }, "Select source"),
+        h("button", { class: "small", onClick: () => select({ kind: "node", key: r.from }) }, "Select source"),
       ),
     );
     return box;
@@ -446,9 +466,7 @@ function inspector() {
 
 function savedPanel() {
   const sc = state.scenario;
-  return h(
-    "section",
-    { class: "panel" },
+  return [
     h("h2", null, "Designs"),
     h(
       "div",
@@ -485,7 +503,7 @@ function savedPanel() {
           ),
         )
       : h("p", { class: "dim" }, "No saved designs yet. Saved designs can be compared in the Simulation tab."),
-  );
+  ];
 }
 
 /* ---------------- export / import ---------------- */
@@ -503,7 +521,7 @@ function exportPanel() {
         class: `small${exportFormat === f ? " active" : ""}`,
         onClick: () => {
           exportFormat = f;
-          commit(() => {});
+          notify();
         },
       },
       label,
@@ -522,16 +540,14 @@ function exportPanel() {
           st.design = data.design;
           selection = null;
         });
-        importMessage = `Loaded “${data.design.name}” for “${data.scenario.name}”.`;
+        importMessage = [`Loaded “${data.design.name}” for “${data.scenario.name}”.`, ...data.notes].join(" ");
       } catch (err) {
         importMessage = (err as Error).message;
       }
-      commit(() => {});
+      notify();
     },
   }) as HTMLInputElement;
-  return h(
-    "section",
-    { class: "panel" },
+  return [
     h("h2", null, "Export & import"),
     h(
       "div",
@@ -547,5 +563,5 @@ function exportPanel() {
     ),
     importMessage ? h("p", { class: "hint" }, importMessage) : null,
     h("pre", { class: "code" }, text),
-  );
+  ];
 }

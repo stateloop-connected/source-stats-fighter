@@ -44,6 +44,8 @@ export interface Route {
   from: string;
   to: string;
   share: number;
+  /** Position of the share label relative to the default midpoint of the edge, if the player moved it. */
+  label?: { x: number; y: number };
 }
 
 export interface Design {
