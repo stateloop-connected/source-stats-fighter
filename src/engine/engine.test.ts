@@ -405,8 +405,8 @@ describe("briefing", () => {
   it("states goals, ships, energy and intelligence in standard sentences", () => {
     const s = defaultScenario();
     const text = briefingText(s).join(" ");
-    expect(text).toContain("Your primary goal is to stop at least 80% of the Attack ships.");
-    expect(text).toContain("40 ships of each class will come; you must stop 32 Attack ships");
+    expect(text).toContain("Your primary goal is to stop at least 65% of the Attack ships.");
+    expect(text).toContain("40 ships of each class will come; you must stop 26 Attack ships");
     expect(text).toContain("360 units of energy");
     expect(text).toContain("Intelligence rates the Plasma Lance as strong against Attack ships and uncertain against Recon and Supply ships.");
     expect(rate({ guess: 0.3, low: 0.2, high: 0.4 })).toBe("moderate");

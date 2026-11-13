@@ -208,9 +208,9 @@ export function defaultScenario(): Scenario {
     { id: "c2", name: "Ion Disruptor", weapon: "ion" },
   ];
   const classes: ShipClass[] = [
-    { id: "k1", name: "Attack", goal: 0.8, primary: true },
-    { id: "k2", name: "Recon", goal: 0.6, primary: false },
-    { id: "k3", name: "Supply", goal: 0.5, primary: false },
+    { id: "k1", name: "Attack", goal: 0.65, primary: true },
+    { id: "k2", name: "Recon", goal: 0.35, primary: false },
+    { id: "k3", name: "Supply", goal: 0.3, primary: false },
   ];
   const T = (c: string, k: string) => targetKey(c, k);
   return {
