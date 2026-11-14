@@ -96,10 +96,8 @@ export function drawStats(ctx: CanvasRenderingContext2D, v: StatsView) {
         if (z > ZMAX) arrow(ctx, X(c, ZMAX) + 2, y + 1, PAL.text);
         note = `impact ${z.toFixed(2)}`;
         noteColor = Number.isFinite(sh) && z > sh ? PAL.amber : PAL.text;
-      } else if (mo && mo.absorbed[i]) {
-        note = "absorbed";
       } else if (w <= 0) {
-        note = "no drones";
+        note = "no drones · not fired at";
       } else {
         note = "impact ?";
       }

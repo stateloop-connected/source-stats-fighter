@@ -49,7 +49,7 @@ describe("battle timeline", () => {
     }
   });
 
-  it("reveals impacts only on ships with drones, absorbs beams on ships without, and skips cannons without energy", () => {
+  it("fires only at ships with drones, reveals impacts only on those, and skips cannons without energy", () => {
     for (const fr of formations) {
       const segs = timeline(fr);
       for (const { t } of samples(segs)) {
@@ -57,9 +57,9 @@ describe("battle timeline", () => {
         for (let i = 0; i < p.m; i++) {
           if (i >= 3) {
             // Ion Disruptor has no energy: it never fires
-            expect(mo.firedAt[i] || mo.revealed[i] || mo.absorbed[i]).toBe(false);
+            expect(mo.firedAt[i] || mo.revealed[i]).toBe(false);
           }
-          expect(mo.revealed[i] && mo.absorbed[i]).toBe(false);
+          if (mo.firedAt[i]) expect(mo.weights[i]).toBeGreaterThan(0);
           if (mo.fallen[i]) expect(mo.revealed[i]).toBe(true);
         }
         expect(mo.counted).toBe(mo.seg.kind === "resolve" || mo.seg.kind === "pause");

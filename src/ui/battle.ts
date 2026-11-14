@@ -462,6 +462,7 @@ function caption(b: Battle | null, fr: Battle["result"]["formations"][number] | 
       return `${head}approaching.`;
     case "fire": {
       const round = mo.seg.round;
+      if (!mo.firedAt.some(Boolean)) return `${head}${round === 0 ? "no ship holds drones, so the cannons hold fire." : "no standing ship holds drones; the cannons hold fire."}`;
       if (mo.q < HIT_AT) return `${head}${round === 0 ? "cannons fire" : "cannons fire again"}.`;
       const breaking = mo.revealed.map((r, i) => r && !mo.fallen[i] && fr.shots[i] > shield(mo.weights[i], sc.alpha)).some(Boolean);
       return `${head}${breaking ? "a shield gives way." : round === 0 ? "no impact beats its shield." : "no further shield gives way."}`;

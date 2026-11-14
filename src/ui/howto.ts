@@ -52,7 +52,7 @@ export function renderHowTo(root: HTMLElement) {
       h(
         "p",
         null,
-        "Launch the battle against the real enemy. In each formation the cannons fire at every ship in their lane. A ship falls when the impact beats its shield; its drones then fly on, the cannons fire again, and further ships may fall. Ships without drones absorb the beam. Survivors fly on to the planet.",
+        "Launch the battle against the real enemy. In each formation the cannons fire at every ship in their lane that holds drones. A ship falls when the impact beats its shield; its drones then fly on, the cannons fire again, and further ships may fall. A ship without drones cannot fall, so it is not fired at until drones reach it through a wormhole. Survivors fly on to the planet.",
       ),
       h(
         "p",

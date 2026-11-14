@@ -267,7 +267,7 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
     ctx.globalAlpha = 1 - leave * 0.7;
     const w = weights[i] ?? 0;
     const sh = shield(w, alpha);
-    // shield bubble: thick and bright when strong, a bright double ring when there are no drones
+    // shield bubble: thick and bright when strong, a double ring when there are no drones (never fired at)
     const hitNow = mo && mo.seg.kind === "fire" && mo.firedAt[i] && mo.q >= HIT_AT ? 1 - (mo.q - HIT_AT) / (1 - HIT_AT) : 0;
     if (!Number.isFinite(sh)) {
       ctx.strokeStyle = `rgba(200,240,255,${0.35 + 0.6 * hitNow})`;

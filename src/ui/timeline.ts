@@ -50,12 +50,14 @@ export interface Moment {
   /** Targets whose ship has fallen (including the one exploding now). */
   fallen: boolean[];
   exploding: number | null;
-  /** Ships being fired at in the current fire segment (standing, cannon has energy). */
+  /**
+   * Ships being fired at in the current fire segment: standing, the cannon has energy, and the ship
+   * holds drones. Cannons do not fire at ships without drones; those are fired at in the first round
+   * after drones arrive through a wormhole.
+   */
   firedAt: boolean[];
-  /** Impact shown: the target had drones when a beam hit it. */
+  /** Impact shown: the ship was fired at (it had drones when a beam hit it). */
   revealed: boolean[];
-  /** Ships hit while they had no drones: the beam was absorbed by the shield. */
-  absorbed: boolean[];
   flights: Flight[];
   /** Drones lost in the current travel segment (share of the swarm). */
   lost: number;
@@ -75,16 +77,9 @@ export function momentAt(fr: FormationResult, w0: number[], segs: Seg[], t: numb
   let weights = w0.slice();
   const fallen = new Array<boolean>(m).fill(false);
   const revealed = new Array<boolean>(m).fill(false);
-  const absorbed = new Array<boolean>(m).fill(false);
+  const target = (i: number) => !fallen[i] && canFire[i] && weights[i] > 0;
   const hit = () => {
-    for (let i = 0; i < m; i++) {
-      if (fallen[i] || !canFire[i]) continue;
-      if (weights[i] > 0) {
-        revealed[i] = true;
-        absorbed[i] = false;
-      }
-      else if (!revealed[i]) absorbed[i] = true;
-    }
+    for (let i = 0; i < m; i++) if (target(i)) revealed[i] = true;
   };
   let acc = 0;
   let idx = segs.length - 1;
@@ -108,7 +103,7 @@ export function momentAt(fr: FormationResult, w0: number[], segs: Seg[], t: numb
   let lost = 0;
   const firedAt = new Array<boolean>(m).fill(false);
   if (seg.kind === "fire") {
-    for (let i = 0; i < m; i++) firedAt[i] = !fallen[i] && canFire[i];
+    for (let i = 0; i < m; i++) firedAt[i] = target(i);
     if (q >= HIT_AT) hit();
   } else if (seg.kind === "fall") {
     exploding = fr.steps[seg.step].target;
@@ -130,7 +125,6 @@ export function momentAt(fr: FormationResult, w0: number[], segs: Seg[], t: numb
     exploding,
     firedAt,
     revealed,
-    absorbed,
     flights,
     lost,
     arrive: seg.kind === "arrive" ? ease(q) : 1,
