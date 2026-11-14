@@ -1,6 +1,7 @@
 import { targets, energyUsed, type Design, type Scenario } from "./model";
 import { missions, type Mission } from "./missions";
 import { checkDesign, checkScenario } from "./migrate";
+import { START, type Inquiry, type Standing } from "./inquiry";
 
 /** One battle fought in a campaign run. The outcome follows from scenario, design and seed. */
 export interface BattleRecord {
@@ -12,6 +13,8 @@ export interface BattleRecord {
   won: boolean;
   tally: number[];
   energyUsed: number;
+  /** The board's verdict, stored once it has been reached (it follows from the record, so it never changes). */
+  inquiry?: Inquiry;
 }
 
 export type Phase = "briefing" | "planning" | "launched";
@@ -24,14 +27,25 @@ export interface Campaign {
   phase: Phase;
   record: BattleRecord[];
   hintsDismissed: string[];
+  /** Simulated battles used per mission id, against the mission's allowance. */
+  simUsed: Record<string, number>;
 }
 
 export function newCampaign(now = Date.now()): Campaign {
-  return { id: `run${now.toString(36)}`, startedAt: now, index: 0, phase: "briefing", record: [], hintsDismissed: [] };
+  return { id: `run${now.toString(36)}`, startedAt: now, index: 0, phase: "briefing", record: [], hintsDismissed: [], simUsed: {} };
 }
 
 export function currentMission(c: Campaign): Mission | null {
   return missions()[c.index] ?? null;
+}
+
+/** Merit and rank after the last battle the board has judged. */
+export function standing(c: Campaign): Standing {
+  for (let i = c.record.length - 1; i >= 0; i--) {
+    const q = c.record[i].inquiry;
+    if (q) return { ...q.after };
+  }
+  return { ...START };
 }
 
 export function isOver(c: Campaign): boolean {
@@ -42,6 +56,24 @@ export function isOver(c: Campaign): boolean {
 export function currentRecord(c: Campaign): BattleRecord | null {
   const m = currentMission(c);
   return m ? (c.record.find((r) => r.missionId === m.id) ?? null) : null;
+}
+
+/** Every version of a mission's scenario that a run can face, one per variant (the first is the base). */
+export function variantScenarios(m: Mission): Scenario[] {
+  const vs = m.variants?.length ? m.variants : [{}];
+  return vs.map((v) => {
+    const sc: Scenario = JSON.parse(JSON.stringify(m.scenario));
+    Object.assign(sc.trueEffect, v);
+    return sc;
+  });
+}
+
+/** The scenario a run faces: one variant, chosen from the run's id so it stays the same within a run. */
+export function missionScenario(m: Mission, runId: string): Scenario {
+  const all = variantScenarios(m);
+  let hsh = 2166136261;
+  for (const ch of `${runId}/${m.id}`) hsh = Math.imul(hsh ^ ch.charCodeAt(0), 16777619);
+  return all[(hsh >>> 0) % all.length];
 }
 
 export const sameTargets = (a: Scenario, b: Scenario) => JSON.stringify(targets(a).map((t) => t.key)) === JSON.stringify(targets(b).map((t) => t.key));
@@ -90,6 +122,7 @@ export function checkCampaign(c: unknown): Campaign {
         won: !!r.won,
         tally: Array.isArray(r.tally) ? r.tally.map(Number) : [],
         energyUsed: Number(r.energyUsed) || 0,
+        inquiry: checkInquiry(r.inquiry),
       }))
     : [];
   return {
@@ -99,5 +132,24 @@ export function checkCampaign(c: unknown): Campaign {
     phase,
     record,
     hintsDismissed: Array.isArray(c.hintsDismissed) ? c.hintsDismissed.map(String) : [],
+    simUsed: isObj(c.simUsed) ? Object.fromEntries(Object.entries(c.simUsed).map(([k, v]) => [k, Math.max(0, Number(v) || 0)])) : {},
+  };
+}
+
+/** An inquiry read from storage, or undefined when it is missing or damaged (it is then reached again). */
+function checkInquiry(q: unknown): Inquiry | undefined {
+  if (!isObj(q)) return undefined;
+  const st = (x: unknown): Standing | null => (isObj(x) && Number.isFinite(Number(x.merit)) && Number.isInteger(Number(x.rank)) ? { merit: Number(x.merit), rank: Number(x.rank) } : null);
+  const before = st(q.before);
+  const after = st(q.after);
+  const verdicts = ["commendation", "credited", "lucky", "noBlame", "reprimand"];
+  if (!before || !after || !verdicts.includes(q.verdict) || !Array.isArray(q.items)) return undefined;
+  return {
+    odds: Number(q.odds) || 0,
+    rivalOdds: Number(q.rivalOdds) || 0,
+    verdict: q.verdict,
+    items: q.items.map((x: any) => ({ reason: String(x?.reason ?? ""), points: Number(x?.points) || 0 })),
+    before,
+    after,
   };
 }

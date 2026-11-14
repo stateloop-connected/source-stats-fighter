@@ -1,8 +1,11 @@
-import { corrKey, defaultDesign, defaultScenario, GC, targetKey, type Assumption, type Design, type Scenario } from "../engine/model";
+import { compile, corrKey, defaultDesign, defaultScenario, effectsFor, GC, targetKey, type Assumption, type Design, type Scenario } from "../engine/model";
+import { goalCount } from "../engine/battle";
+import { judge } from "../engine/inquiry";
+import { runSimulation } from "./simclient";
 import type { SimResult } from "../engine/battle";
 import { DATA_VERSION, checkDesign, checkScenario, upgrade } from "../engine/migrate";
 import { FREE_RULES, missions, type Mission, type MissionRules } from "../engine/missions";
-import { checkCampaign, currentMission, fitDesign, newCampaign, startingDesigns, type BattleRecord, type Campaign } from "../engine/campaign";
+import { checkCampaign, currentMission, fitDesign, missionScenario, newCampaign, standing, startingDesigns, type BattleRecord, type Campaign } from "../engine/campaign";
 
 export interface SavedDesign {
   id: string;
@@ -227,7 +230,7 @@ function missionWorkspace(c: Campaign): Workspace {
   const m = currentMission(c)!;
   const { design, saved } = startingDesigns(m, c.record);
   return {
-    scenario: JSON.parse(JSON.stringify(m.scenario)),
+    scenario: missionScenario(m, c.id),
     design,
     saved: saved.map((d, i) => ({ id: `kept${c.index}-${i}`, design: d, savedAt: Date.now() })),
     sim: { ...defaultSim(), assumption: m.rules.simulator[0] },
@@ -292,6 +295,75 @@ export function recordBattle(rec: BattleRecord) {
   c.record.push(rec);
   c.phase = "launched";
   persist();
+}
+
+/* ---------------- board of inquiry ---------------- */
+
+/** Battles simulated for each design when the board weighs a plan. */
+export const INQUIRY_BATTLES = 4000;
+let inquiring: BattleRecord | null = null;
+let inquiryPromise: Promise<void> = Promise.resolve();
+let inquiryError = "";
+export const inquiryFailed = () => inquiryError;
+
+/**
+ * Have the board judge every battle of the run that it has not judged yet, in order. The odds follow
+ * from the record (same seed every time), so the verdict is the same whenever it is reached.
+ */
+export function ensureInquiry(): Promise<void> {
+  const c = state.campaign;
+  const rec = c?.record.find((r) => !r.inquiry);
+  if (!c || !rec) return Promise.resolve();
+  if (inquiring === rec) return inquiryPromise;
+  const m = missions().find((x) => x.id === rec.missionId);
+  if (!m) return Promise.resolve();
+  inquiring = rec;
+  inquiryError = "";
+  const sc = rec.scenario;
+  const eff = effectsFor(sc, "truth");
+  return (inquiryPromise = runSimulation("inquiry", [compile(sc, rec.design, eff), compile(sc, m.rival, eff)], INQUIRY_BATTLES, (rec.seed ^ 0x5eed) >>> 0)
+    .then(([mine, rival]) => {
+      inquiring = null;
+      if (state.campaign !== c || rec.inquiry) return;
+      const ships = sc.cannons.length * sc.formations;
+      const secondaryMet = sc.classes.filter((k, i) => !k.primary && (rec.tally[i] ?? 0) >= goalCount(k.goal, ships)).map((k) => k.name);
+      const before = standing({ ...c, record: c.record.slice(0, c.record.indexOf(rec)) });
+      rec.inquiry = judge(
+        { won: rec.won, odds: mine.allPrimary, rivalOdds: rival.allPrimary, stakes: m.stakes, secondaryMet, energyUsed: rec.energyUsed, energyAvailable: sc.energyAvailable },
+        before,
+      );
+      persist();
+      notify();
+      return ensureInquiry();
+    })
+    .catch((e: Error) => {
+      inquiring = null;
+      if (e.message !== "cancelled") inquiryError = e.message || "The board could not meet.";
+      notify();
+    }));
+}
+
+/* ---------------- simulator allowance ---------------- */
+
+/** The mission's simulator allowance, or null when simulation is unlimited here. */
+export function simAllowance(): { total: number; used: number; left: number } | null {
+  const m = activeMission();
+  const total = m?.rules.simAllowance;
+  if (!m || !total || !state.campaign) return null;
+  const used = state.campaign.simUsed[m.id] ?? 0;
+  return { total, used, left: Math.max(0, total - used) };
+}
+
+/** Take simulated battles from the allowance; false when there are not enough left. */
+export function spendSim(battles: number): boolean {
+  const a = simAllowance();
+  if (!a) return true;
+  if (battles > a.left) return false;
+  const m = activeMission()!;
+  state.campaign!.simUsed[m.id] = a.used + battles;
+  persist();
+  notify();
+  return true;
 }
 
 export function dismissHint(id: string) {

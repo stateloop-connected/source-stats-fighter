@@ -6,7 +6,9 @@ import { renderSimulation, resetSimulation } from "./ui/simulation";
 import { battleScreen, showBattle, hideBattle, resetBattle } from "./ui/battle";
 import { renderHowTo } from "./ui/howto";
 import { renderStart, renderBriefing, renderEnd, type View } from "./ui/campaign";
-import { isOver } from "./engine/campaign";
+import { isOver, standing } from "./engine/campaign";
+import { RANKS } from "./engine/inquiry";
+import { art } from "./ui/art";
 
 const VIEWS: View[] = ["start", "briefing", "setup", "simulation", "battle", "howto", "end"];
 
@@ -21,7 +23,7 @@ function initialView(): View {
   const v = location.hash.slice(1) as View;
   if (!VIEWS.includes(v)) return "start";
   if (v === "briefing" && !activeMission()) return "start";
-  if (v === "end" && !(state.campaign && isOver(state.campaign))) return "start";
+  if (v === "end" && !state.campaign?.record.length) return "start";
   return v;
 }
 
@@ -51,11 +53,17 @@ function renderNav() {
     current === "start"
       ? ""
       : current === "end"
-        ? h("span", null, "Campaign · end of the run")
+        ? h("span", null, "Campaign · service record")
         : m
-          ? h("span", null, h("span", { class: "dim" }, `Campaign · mission ${m.number} of ${MISSION_COUNT} · `), h("strong", null, m.title))
+          ? h("span", { class: "ctx-mission" }, rankBadge(), h("span", { class: "dim" }, `Campaign · mission ${m.number} of ${MISSION_COUNT} · `), h("strong", null, m.title))
           : h("span", null, h("span", { class: "dim" }, "Free training · "), h("strong", null, state.scenario.name)),
   );
+}
+
+/** The commander's rank insignia and name, for the context bar. */
+function rankBadge() {
+  const r = RANKS[state.campaign ? standing(state.campaign).rank : 0];
+  return h("span", { class: "rank-badge", title: `Your rank: ${r.name}` }, art(r.insignia, 32, 32, { fallback: "insignia", maxScale: 1, minScale: 1, class: "insignia tiny" }), h("span", null, r.name), h("span", { class: "dim" }, " · "));
 }
 
 function renderCurrent() {

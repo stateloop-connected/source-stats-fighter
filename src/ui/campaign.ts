@@ -3,7 +3,8 @@ import { art } from "./art";
 import { activeMission, enterFree, enterMission, MISSION_COUNT, setPhase, startNewCampaign, state, studyMission } from "./state";
 import { CHARACTERS } from "../engine/missions";
 import { missions } from "../engine/missions";
-import { isOver } from "../engine/campaign";
+import { isOver, standing } from "../engine/campaign";
+import { RANKS, VERDICT_TEXT } from "../engine/inquiry";
 import { briefingText } from "../engine/briefing";
 import { hints } from "./hints";
 
@@ -41,7 +42,7 @@ export function renderStart(root: HTMLElement, go: Go) {
         { class: "menu" },
         running ? h("button", { class: "primary", onClick: cont }, "Continue campaign", h("span", { class: "dim small" }, ` — mission ${c!.index + 1}: ${m!.title}`)) : null,
         h("button", { class: running ? "" : "primary", onClick: fresh }, "New campaign"),
-        c && isOver(c) ? h("button", { onClick: () => go("end") }, "Last run's record") : null,
+        c && c.record.length ? h("button", { onClick: () => go("end") }, isOver(c) ? "Last run's service record" : "Service record") : null,
         h(
           "button",
           {
@@ -85,6 +86,19 @@ export function renderBriefing(root: HTMLElement, go: Go) {
         art(co.portrait, 96, 96, { fallback: "portrait", maxScale: 2, class: "portrait" }),
         h("div", { class: "speech" }, h("div", { class: "who" }, co.name, h("span", { class: "dim" }, ` · ${co.role}`)), m.briefing.map((t) => h("p", null, t))),
       ),
+      m.intelReport?.length
+        ? h(
+            "div",
+            { class: "speaker" },
+            art(CHARACTERS.intel.portrait, 96, 96, { fallback: "portrait", maxScale: 2, class: "portrait" }),
+            h(
+              "div",
+              { class: "speech" },
+              h("div", { class: "who" }, CHARACTERS.intel.name, h("span", { class: "dim" }, ` · ${CHARACTERS.intel.role}`)),
+              m.intelReport.map((t) => h("p", null, t)),
+            ),
+          )
+        : null,
       h("h3", null, "Orders"),
       h("div", { class: "briefing" }, briefingText(state.scenario).map((t) => h("p", null, t))),
       hints("briefing"),
@@ -107,20 +121,28 @@ export function renderBriefing(root: HTMLElement, go: Go) {
   );
 }
 
-/* ---------------- end of the run ---------------- */
+/* ---------------- service record ---------------- */
 
 export function renderEnd(root: HTMLElement, go: Go) {
   const c = state.campaign;
   const all = missions();
+  const over = !!c && isOver(c);
+  const st = c ? standing(c) : { merit: 0, rank: 0 };
+  const rank = RANKS[st.rank];
+  const next = RANKS[st.rank + 1];
   const rows = (c?.record ?? []).map((r) => {
     const m = all.find((x) => x.id === r.missionId);
+    const q = r.inquiry;
+    const delta = q ? q.after.merit - q.before.merit : 0;
     return h(
       "tr",
       null,
       h("td", null, m ? `${m.number}. ${m.title}` : r.missionId),
       h("td", { class: r.won ? "ok" : "bad" }, r.won ? "won" : "lost"),
+      h("td", null, q ? VERDICT_TEXT[q.verdict].title : h("span", { class: "dim" }, "pending")),
+      h("td", { class: delta > 0 ? "ok" : delta < 0 ? "bad" : "dim" }, q ? `${delta > 0 ? "+" : ""}${delta}` : "–"),
       h("td", null, `${r.energyUsed} / ${r.scenario.energyAvailable}`),
-      h("td", null, r.scenario.classes.map((k, i) => `${k.name} ${r.tally[i] ?? 0}/${r.scenario.cannons.length * r.scenario.formations}`).join(", ")),
+      h("td", null, q ? pct(q.rivalOdds) : "–"),
       h(
         "td",
         null,
@@ -141,26 +163,44 @@ export function renderEnd(root: HTMLElement, go: Go) {
     );
   });
   const won = (c?.record ?? []).filter((r) => r.won).length;
+  const n = c?.record.length ?? 0;
+  const closing = !over
+    ? `The run is in progress: ${n} of ${MISSION_COUNT} missions fought.`
+    : st.rank === RANKS.length - 1
+      ? "The board has nothing left to give you. Admiral."
+      : `The run is complete. ${won} of ${n} battles won. The rank of ${RANKS[RANKS.length - 1].name} remains for a run that is planned even better.`;
   root.replaceChildren(
     h(
       "section",
       { class: "panel" },
-      h("h2", null, "End of the run"),
-      art("record", 320, 120, { fallback: "space", maxScale: 3, class: "mission-art" }),
+      h("h2", null, over ? "Service record — end of the run" : "Service record"),
+      over ? art("campaign-end", 320, 200, { fallback: "horizon", maxScale: 2, class: "mission-art" }) : art("record", 320, 120, { fallback: "space", maxScale: 3, class: "mission-art" }),
       h(
-        "p",
-        null,
-        c && c.record.length
-          ? `${won} of ${c.record.length} battles won (${pct(won / c.record.length)}). The introduction is complete. Further missions are in preparation at Command.`
-          : "No battles fought yet.",
+        "div",
+        { class: "rank-head" },
+        art(rank.insignia, 32, 32, { fallback: "insignia", maxScale: 2, minScale: 2, class: "insignia" }),
+        h("div", null, h("div", { class: "rank-name" }, rank.name), h("div", { class: "dim small" }, `Merit ${st.merit}${next ? ` · ${next.name} at ${next.merit}` : ""}`)),
       ),
+      h("p", null, n ? closing : "No battles fought yet."),
+      n
+        ? h(
+            "div",
+            { class: "scroll-x" },
+            h(
+              "table",
+              { class: "grid" },
+              h("tr", null, h("th", null, "Mission"), h("th", null, "Result"), h("th", null, "Verdict"), h("th", null, "Merit"), h("th", null, "Energy"), h("th", null, "Rival’s odds"), h("th", null, "")),
+              rows,
+            ),
+          )
+        : null,
+      h("p", { class: "dim small" }, "Rival’s odds: how often Commander Hollister’s reference design would have won the battle as it was fought. Study opens a mission in free training without touching the record."),
       h(
-        "table",
-        { class: "grid" },
-        h("tr", null, h("th", null, "Mission"), h("th", null, "Result"), h("th", null, "Energy"), h("th", null, "Ships stopped"), h("th", null, "")),
-        rows,
+        "div",
+        { class: "row" },
+        !over && c ? h("button", { class: "primary", onClick: () => { enterMission(); go(c.phase === "briefing" ? "briefing" : c.phase === "launched" ? "battle" : "setup"); } }, "Back to the campaign") : null,
+        h("button", { onClick: () => go("start") }, "Back to the menu"),
       ),
-      h("div", { class: "row" }, h("button", { onClick: () => go("start") }, "Back to the menu")),
     ),
   );
 }

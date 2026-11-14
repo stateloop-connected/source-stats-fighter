@@ -1,5 +1,5 @@
 import { h, numInput, pct, tip } from "./dom";
-import { state, commit, rules } from "./state";
+import { state, commit, rules, simAllowance, spendSim } from "./state";
 import { hints, openHints } from "./hints";
 import { panel, type Panel } from "./panel";
 import { bar } from "./charts";
@@ -70,8 +70,8 @@ export function renderSimulation(root: HTMLElement) {
     mountedIn = root;
     const sec = () => h("section", { class: "panel" });
     const st = () => state;
-    const settings = panel(settingsPanel, () => [st().scenario, st().sim, st().design, running, error, rules().simulator, openHints("simulator")], sec());
-    const compare = panel(comparePanel, () => [st().saved.map((x) => [x.id, x.design.name]), running], sec());
+    const settings = panel(settingsPanel, () => [st().scenario, st().sim, st().design, running, error, rules().simulator, openHints("simulator"), simAllowance()], sec());
+    const compare = panel(comparePanel, () => [st().saved.map((x) => [x.id, x.design.name]), running, simAllowance(), st().sim.battles, [...unchecked]], sec());
     const results = panel(resultsPanel, () => [st().lastSim, st().scenario.classes, st().scenario.cannons, st().scenario.alpha], sec());
     const comp = panel(comparisonPanel, () => [comparison, st().scenario.classes, st().scenario.energyAvailable], h("div"));
     panels = [settings, compare, results, comp];
@@ -135,19 +135,39 @@ function settingsPanel() {
       `${sim.battles} battles × ${sc.formations} formations = ${(sim.battles * sc.formations).toLocaleString()} formations, ${sc.cannons.length * sc.formations} ships of each class per battle`,
       tip(TIPS.formations),
     ),
+    allowanceNote(sim.battles),
     issues.length ? h("p", { class: "error" }, "✖ The design has errors. Fix them in Setup first.") : null,
     h(
       "div",
       { class: "row" },
-      h("button", { class: "primary", disabled: running || issues.length > 0, onClick: () => runCurrent() }, running ? "Simulating…" : "Run simulation"),
+      h("button", { class: "primary", disabled: running || issues.length > 0 || !affordable(sim.battles), onClick: () => runCurrent() }, running ? "Simulating…" : "Run simulation"),
       running ? h("div", { class: "meter" }, h("div", { class: "meter-fill", style: `width:${progress * 100}%` })) : null,
     ),
     error ? h("p", { class: "error" }, error) : null,
   ];
 }
 
+const affordable = (battles: number) => {
+  const a = simAllowance();
+  return !a || battles <= a.left;
+};
+
+/** In a mission with rationed simulator time: what is left, and what this run would cost. */
+function allowanceNote(cost: number) {
+  const a = simAllowance();
+  if (!a) return null;
+  return h(
+    "p",
+    { class: a.left < cost ? "warn-text small" : "small" },
+    `Simulator allowance: ${a.left.toLocaleString()} of ${a.total.toLocaleString()} battles left. `,
+    a.left < cost ? "Not enough for this run: lower the number of battles." : `This run uses ${cost.toLocaleString()}.`,
+    tip("Command rations simulator time on this mission. A small run gives a rough answer with wide whiskers; a precise one uses more of the allowance. Each design in a comparison costs the full number of battles."),
+  );
+}
+
 async function runCurrent() {
   const sc = state.scenario;
+  if (!spendSim(state.sim.battles)) return;
   error = "";
   running = true;
   progress = 0;
@@ -197,6 +217,8 @@ function resultsPanel() {
   ];
 }
 
+const compareCost = () => state.sim.battles * (1 + state.saved.filter((sd) => !unchecked.has(sd.id)).length);
+
 function comparePanel() {
   const saved = state.saved;
   return [
@@ -219,7 +241,11 @@ function comparePanel() {
                   h("input", {
                     type: "checkbox",
                     checked: !unchecked.has(sd.id),
-                    onChange: (e: Event) => ((e.target as HTMLInputElement).checked ? unchecked.delete(sd.id) : unchecked.add(sd.id)),
+                    onChange: (e: Event) => {
+                      if ((e.target as HTMLInputElement).checked) unchecked.delete(sd.id);
+                      else unchecked.add(sd.id);
+                      rerender();
+                    },
                   }),
                   ` ${sd.design.name}`,
                 ),
@@ -227,7 +253,8 @@ function comparePanel() {
             ),
           ),
           h("p", { class: "dim small" }, "The current design is always included."),
-          h("button", { disabled: running, onClick: () => runComparison() }, "Compare under these assumptions"),
+          allowanceNote(compareCost()),
+          h("button", { disabled: running || !affordable(compareCost()), onClick: () => runComparison() }, "Compare under these assumptions"),
         ),
   ];
 }
@@ -242,6 +269,7 @@ async function runComparison() {
     rerender();
     return;
   }
+  if (!spendSim(state.sim.battles * valid.length)) return;
   error = "";
   running = true;
   progress = 0;

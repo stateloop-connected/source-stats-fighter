@@ -1,8 +1,10 @@
 import { h, pct, num, fill } from "./dom";
-import { state, activeMission, recordBattle, advanceCampaign } from "./state";
+import { state, activeMission, recordBattle, advanceCampaign, ensureInquiry, inquiryFailed } from "./state";
 import { art } from "./art";
 import { hints } from "./hints";
-import { currentRecord } from "../engine/campaign";
+import { currentRecord, type BattleRecord } from "../engine/campaign";
+import { RANKS, VERDICT_TEXT, type Inquiry } from "../engine/inquiry";
+import { CHARACTERS, type Mission } from "../engine/missions";
 import type { View } from "./campaign";
 import { bar } from "./charts";
 import { runSimulation } from "./simclient";
@@ -124,6 +126,7 @@ function restore() {
   battle = { scenario: rec.scenario, design: rec.design, problem, result, ts: targets(rec.scenario), fi: 0, t: 0, segs: timeline(result.formations[0]), loggedUpTo: 0 };
   logEl.replaceChildren();
   skip();
+  void ensureInquiry();
 }
 
 function replay() {
@@ -191,6 +194,8 @@ function launch() {
       tally: result.tally,
       energyUsed: energyUsed(sc, d),
     });
+  // the board meets while the battle is shown
+  if (mission) void ensureInquiry();
   battle = { scenario: sc, design: d, problem, result, ts: targets(sc), fi: 0, t: 0, segs: timeline(result.formations[0]), loggedUpTo: 0 };
   paused = false;
   logEl.replaceChildren();
@@ -368,6 +373,17 @@ function renderDebrief() {
       h("h3", null, "How often this design would have won"),
       odds,
     );
+    const rec = mission && state.campaign ? currentRecord(state.campaign) : null;
+    if (rec) {
+      // in a campaign the odds are the board's
+      if (rec.inquiry)
+        fill(
+          odds,
+          bar({ label: h("strong", null, "Your design"), sub: "all primary goals", value: rec.inquiry.odds, n: 4000 }),
+          bar({ label: "Hollister’s plan", sub: "the reference design", value: rec.inquiry.rivalOdds, n: 4000 }),
+        );
+      else fill(odds, h("p", { class: "dim" }, "The board is weighing the plan…"));
+    } else {
     const p = compile(sc, b.design, effectsFor(sc, "truth"));
     runSimulation("debrief", [p], 4000, r.seed ^ 0x5eed)
       .then(([res]) => {
@@ -385,6 +401,7 @@ function renderDebrief() {
         );
       })
       .catch(() => {});
+    }
   } else {
     parts.push(
       h("h3", null, "No wreckage to analyse"),
@@ -402,6 +419,10 @@ function renderDebrief() {
     );
   }
   if (mission) {
+    const rec = state.campaign ? currentRecord(state.campaign) : null;
+    if (rec) parts.push(boardSection(mission, rec));
+    const ready = !!rec?.inquiry;
+    const failed = inquiryFailed();
     parts.push(
       h(
         "div",
@@ -410,6 +431,7 @@ function renderDebrief() {
           "button",
           {
             class: "primary",
+            disabled: !ready,
             onClick: () => {
               advanceCampaign();
               onContinue(activeMission() ? "briefing" : "end");
@@ -417,11 +439,98 @@ function renderDebrief() {
           },
           "Continue",
         ),
-        h("span", { class: "dim small" }, "The campaign moves on to the next mission."),
+        failed
+          ? h("span", null, h("span", { class: "error" }, `The board could not meet (${failed}). `), h("button", { class: "small", onClick: () => void ensureInquiry().then(rerenderDebrief) }, "Try again"))
+          : h("span", { class: "dim small" }, ready ? "The campaign moves on to the next mission." : "Waiting for the board…"),
       ),
     );
+    if (rec && !rec.inquiry && !failed) void ensureInquiry().then(rerenderDebrief);
   }
   debriefEl.replaceChildren(h("section", { class: "panel" }, parts));
+}
+
+/** Draw the debrief again once the board has reached its verdict (only if the battle has ended). */
+function rerenderDebrief() {
+  const b = battle;
+  const rec = state.campaign ? currentRecord(state.campaign) : null;
+  if (b && b.fi >= b.problem.formations && (!activeMission() || rec?.inquiry || inquiryFailed())) renderDebrief();
+}
+
+/** The board of inquiry: verdict, merit, rank, and a word from the rival. Numbers only after a win. */
+function boardSection(m: Mission, rec: BattleRecord): HTMLElement {
+  const q: Inquiry | undefined = rec.inquiry;
+  const co = CHARACTERS.commander;
+  const rv = CHARACTERS.rival;
+  if (!q)
+    return h(
+      "section",
+      { class: "board" },
+      h("h3", null, "Board of inquiry"),
+      art("board", 320, 120, { fallback: "space", maxScale: 3, class: "mission-art" }),
+      h("p", { class: "dim" }, "The board is in session. It weighs your plan against the reference design…"),
+    );
+  const vt = VERDICT_TEXT[q.verdict];
+  const mood = q.verdict === "commendation" ? "-pleased" : q.verdict === "lucky" || q.verdict === "reprimand" ? "-displeased" : "";
+  const better = rec.won && q.odds >= q.rivalOdds + 0.03;
+  const rivalMood = better ? "-displeased" : q.verdict === "commendation" || q.verdict === "noBlame" ? "" : "-pleased";
+  const rivalLine = !rec.won
+    ? q.verdict === "noBlame"
+      ? "Hard luck. It happens to the best of us. Occasionally even to me."
+      : "I did warn them about you."
+    : better
+      ? `A better plan than mine. I shall be checking your arithmetic.`
+      : q.verdict === "commendation"
+        ? "Not bad. Not bad at all."
+        : `My plan would have won ${pct(q.rivalOdds)} of the time. Just so you know.`;
+  const before = RANKS[q.before.rank];
+  const after = RANKS[q.after.rank];
+  const next = RANKS[q.after.rank + 1];
+  const change = q.after.rank > q.before.rank ? "promotion" : q.after.rank < q.before.rank ? "demotion" : null;
+  const total = q.items.reduce((a, x) => a + x.points, 0);
+  return h(
+    "section",
+    { class: "board" },
+    h("h3", null, "Board of inquiry"),
+    art("board", 320, 120, { fallback: "space", maxScale: 3, class: "mission-art" }),
+    h(
+      "div",
+      { class: "speaker" },
+      art(co.portrait + mood, 96, 96, { fallback: "portrait", maxScale: 2, class: "portrait" }),
+      h("div", { class: "speech" }, h("div", { class: "who" }, co.name, h("span", { class: "dim" }, ` · ${co.role}`)), h("p", null, h("strong", null, vt.title), ". ", vt.text)),
+    ),
+    h(
+      "table",
+      { class: "grid merit" },
+      q.items.length ? q.items.map((x) => h("tr", null, h("td", null, x.reason), h("td", { class: x.points > 0 ? "ok" : x.points < 0 ? "bad" : "" }, `${x.points > 0 ? "+" : ""}${x.points}`))) : h("tr", null, h("td", { class: "dim" }, "No merit awarded"), h("td", null, "0")),
+      h("tr", null, h("th", null, `Merit (mission weight ×${m.stakes})`), h("th", null, `${q.before.merit} → ${q.after.merit} (${total >= 0 ? "+" : ""}${total})`)),
+    ),
+    change
+      ? h(
+          "div",
+          { class: `rank-change ${change}` },
+          art(change, 160, 100, { fallback: "insignia", maxScale: 2, class: "change-art" }),
+          h(
+            "div",
+            null,
+            h("h3", null, change === "promotion" ? "Promoted" : "Demoted"),
+            h("p", null, `${before.name} → `, h("strong", null, after.name), "."),
+            art(after.insignia, 32, 32, { fallback: "insignia", maxScale: 2, minScale: 2, class: "insignia" }),
+          ),
+        )
+      : h(
+          "p",
+          { class: "rank-line" },
+          art(after.insignia, 32, 32, { fallback: "insignia", maxScale: 1, class: "insignia inline" }),
+          `Rank: ${after.name}. `,
+          next ? h("span", { class: "dim" }, `Promotion to ${next.name} at ${next.merit} merit.`) : h("span", { class: "dim" }, "The highest rank there is."),
+        ),
+    h(
+      "div",
+      { class: "speaker rival" },
+      art(rv.portrait + rivalMood, 96, 96, { fallback: "portrait", maxScale: 1, minScale: 1, class: "portrait small-portrait" }),
+      h("div", { class: "speech" }, h("div", { class: "who" }, rv.name, h("span", { class: "dim" }, ` · ${rv.role}`)), h("p", null, `“${rivalLine}”`)),
+    ),
+  );
 }
 
 /* ---------------- drawing ---------------- */

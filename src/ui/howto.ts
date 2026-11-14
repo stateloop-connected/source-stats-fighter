@@ -18,6 +18,17 @@ export function renderHowTo(root: HTMLElement) {
         null,
         "A campaign is a run of missions, each adding one idea. Every mission starts with a briefing, then you plan in Setup and rehearse in Simulation. Launching the battle is final: each battle is fought once, and the run moves on whether it was won or lost. Early missions keep some controls closed until they are needed, and the chief scientist leaves a few hints that you can dismiss. Free training is the open workbench: every control, any scenario, as many battles as you like. Missions fought in a run can be loaded into free training to study them.",
       ),
+      h(
+        "p",
+        null,
+        "From mission 4 the range reports are classified: you plan on intelligence, which gives a best guess and a range, and the simulator runs on intelligence too. Part of the truth changes from run to run within what intelligence states, so a second run cannot be won from memory. In missions 6 and 8 simulator time is rationed: a small run gives a rough answer with wide whiskers, a precise one uses more of the allowance, and each design in a comparison costs the full number of battles.",
+      ),
+      h("h3", null, "The board of inquiry and your rank"),
+      h(
+        "p",
+        null,
+        "After every campaign battle a board of inquiry works out how often your design would have won under the true effects, and compares it with the reference design of your rival, Commander Hollister. A plan as good as his, or close, earns a commendation; a fair plan that wins is credited; a win on a plan that would usually have lost earns nothing. A loss on a sound plan carries no blame, but a loss on a weak plan costs merit. Secondary goals met and energy left unspent earn extra merit, but only when the primary goals were met. Merit counts more on harder missions. Enough merit brings promotion, from Ensign up to Admiral; falling well short of your rank costs it. The exact odds are shown only after a win, once the wreckage has been analysed. The service record lists every mission with its verdict, energy used and the rival's odds.",
+      ),
       h("h3", null, "1. Setup"),
       h(
         "ul",
