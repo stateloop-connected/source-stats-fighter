@@ -8,6 +8,8 @@ export type Selection = { kind: "node"; key: string } | { kind: "route"; index: 
 export interface NetworkCallbacks {
   select(sel: Selection): void;
   addRoute(from: string, to: string): void;
+  /** Whether dragging between targets opens a wormhole. */
+  allowRoutes?: boolean;
   /** Move a route's share label (null resets it). */
   moveLabel(index: number, offset: Pt | null): void;
 }
@@ -167,7 +169,7 @@ export function renderNetwork(svg: SVGSVGElement, sc: Scenario, d: Design, sel: 
     if (!drag) return;
     const p = toSvg(e);
     if (Math.hypot(p.x - drag.x, p.y - drag.y) > 8) drag.moved = true;
-    if (drag.moved) {
+    if (drag.moved && cb.allowRoutes !== false) {
       const a = pos.get(drag.from)!;
       temp.setAttribute("d", `M${a.x},${a.y} L${p.x},${p.y}`);
     }
@@ -180,7 +182,7 @@ export function renderNetwork(svg: SVGSVGElement, sc: Scenario, d: Design, sel: 
     const moved = drag.moved;
     drag = null;
     temp.setAttribute("d", "");
-    if (moved && target && target !== from) cb.addRoute(from, target);
+    if (moved && target && target !== from && cb.allowRoutes !== false) cb.addRoute(from, target);
     else if (!moved) cb.select({ kind: "node", key: from });
   };
 }

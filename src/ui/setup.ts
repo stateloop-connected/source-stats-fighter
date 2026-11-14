@@ -1,5 +1,7 @@
 import { h, numInput, download, newId, pct, add, num } from "./dom";
-import { state, commit, notify, cloneDesign, resetAll, loadNotes } from "./state";
+import { state, commit, notify, cloneDesign, resetAll, loadNotes, rules, studyMission } from "./state";
+import { hints, openHints } from "./hints";
+import { missions } from "../engine/missions";
 import { panel, type Panel } from "./panel";
 import { renderNetwork, type Selection } from "./network";
 import { GC, MAX_CANNONS, MAX_CLASSES, corrKey, energyUsed, information, targets, validateDesign, defaultScenario, type Design } from "../engine/model";
@@ -18,19 +20,27 @@ let panels: Panel[] = [];
 const sec = (cls = "panel") => h("section", { class: cls });
 const det = () => h("details", { class: "panel" });
 
+/** Forget selections and rebuild on the next render (after the workspace was swapped). */
+export function resetSetup() {
+  selection = null;
+  importMessage = "";
+  mountedIn = null;
+}
+
 export function renderSetup(root: HTMLElement) {
   if (mountedIn !== root) {
     mountedIn = root;
     const st = () => state;
+    const r = () => rules();
     panels = [
-      panel(briefing, () => [st().scenario, loadNotes.length], sec()),
+      panel(briefing, () => [st().scenario, loadNotes.length, st().ctx], sec()),
       panel(validationPanel, () => [st().scenario, st().design], sec()),
-      panel(networkView, () => [st().scenario, st().design, selection], sec("panel network-panel")),
-      panel(presetsPanel, () => 0, sec()),
-      panel(energyPanel, () => [st().scenario.cannons, st().scenario.energyAvailable, st().design.energy], sec()),
-      panel(scenarioEditor, () => st().scenario, det()),
+      panel(networkView, () => [st().scenario, st().design, selection, r().wormholes, openHints("network")], sec("panel network-panel")),
+      panel(presetsPanel, () => [r().presets, r().wormholes, openHints("presets")], sec()),
+      panel(energyPanel, () => [st().scenario.cannons, st().scenario.energyAvailable, st().design.energy, openHints("energy")], sec()),
+      panel(scenarioEditor, () => [st().scenario, r().scenarioEditor, st().campaign?.record.map((x) => x.missionId)], det()),
       panel(savedPanel, () => [st().saved, st().design.name, st().scenario.cannons], sec()),
-      panel(exportPanel, () => [st().scenario, st().design, exportFormat, importMessage], sec()),
+      panel(exportPanel, () => [st().scenario, st().design, exportFormat, importMessage, r().exports, r().json], sec()),
     ];
     root.replaceChildren(...panels.map((p) => p.el));
   }
@@ -57,11 +67,14 @@ function briefing() {
 /* ---------------- scenario editor ---------------- */
 
 function scenarioEditor(el: HTMLElement) {
+  el.hidden = !rules().scenarioEditor;
+  if (el.hidden) return [];
   const sc = state.scenario;
   const box = el as HTMLDetailsElement;
   box.open = scenarioOpen;
   box.ontoggle = () => (scenarioOpen = box.open);
   const det = h("div");
+  const fought = state.campaign?.record ?? [];
   const hidden = sc.hideTruth;
   const ts = targets(sc);
 
@@ -199,12 +212,34 @@ function scenarioEditor(el: HTMLElement) {
         {
           class: "small danger",
           onClick: () => {
-            if (confirm("Reset everything, including saved designs?")) resetAll();
+            if (confirm("Reset free training, including its saved designs? The campaign is not affected.")) resetAll();
           },
         },
-        "Reset everything",
+        "Reset free training",
       ),
     ),
+    fought.length
+      ? h(
+          "div",
+          { class: "row wrap" },
+          h("span", { class: "dim" }, "Missions fought in this run:"),
+          fought.map((r) => {
+            const m = missions().find((x) => x.id === r.missionId);
+            return h(
+              "button",
+              {
+                class: "small",
+                title: "Load the mission's scenario and the design you fought with",
+                onClick: () => {
+                  selection = null;
+                  studyMission(r.missionId);
+                },
+              },
+              m ? `${m.number}. ${m.title}` : r.missionId,
+            );
+          }),
+        )
+      : null,
   );
   return [summary, det];
 }
@@ -244,6 +279,7 @@ function energyPanel() {
   updateTotal();
   return [
     h("h2", null, "Energy"),
+    hints("energy"),
     rows,
     h("div", { class: "row" }, h("span", { class: "dim" }, "Used"), h("div", { class: "meter" }, bar), totalLabel),
     h("p", { class: "hint" }, "More energy means a stronger impact. Ground Control is shared: a cannon is only as good as its tracking."),
@@ -252,7 +288,10 @@ function energyPanel() {
 
 /* ---------------- presets ---------------- */
 
-function presetsPanel() {
+function presetsPanel(el: HTMLElement) {
+  const r = rules();
+  el.hidden = r.presets.length === 0;
+  if (el.hidden) return [];
   const apply = (fn: (d: Design) => void, name?: string) =>
     commit((st) => {
       fn(st.design);
@@ -260,65 +299,71 @@ function presetsPanel() {
       selection = null;
     });
   const keys = () => targets(state.scenario).map((t) => t.key);
+  const buttons = {
+    equal: h(
+      "button",
+      {
+        title: "Spread the swarm equally, no wormholes",
+        onClick: () =>
+          apply((d) => {
+            const ks = keys();
+            d.weights = Object.fromEntries(ks.map((k) => [k, 1 / ks.length]));
+            d.routes = [];
+          }, "Equal split"),
+      },
+      "Equal split",
+    ),
+    strict: h(
+      "button",
+      {
+        title: "All drones on the most promising target according to intelligence, then one target after another",
+        onClick: () =>
+          apply((d) => {
+            const sc = state.scenario;
+            const ks = keys().sort((a, b) => (sc.intel[b]?.guess ?? 0) - (sc.intel[a]?.guess ?? 0));
+            d.weights = Object.fromEntries(ks.map((k, i) => [k, i === 0 ? 1 : 0]));
+            d.routes = ks.slice(0, -1).map((k, i) => ({ from: k, to: ks[i + 1], share: 1 }));
+          }, "Strict sequence"),
+      },
+      "Strict sequence",
+    ),
+    holm: h(
+      "button",
+      {
+        title: "Equal split, and every target passes its drones equally to all others (Holm)",
+        onClick: () =>
+          apply((d) => {
+            const ks = keys();
+            const m = ks.length;
+            d.weights = Object.fromEntries(ks.map((k) => [k, 1 / m]));
+            d.routes = m > 1 ? ks.flatMap((a) => ks.filter((b) => b !== a).map((b) => ({ from: a, to: b, share: 1 / (m - 1) }))) : [];
+          }, "Holm"),
+      },
+      "Holm",
+    ),
+  };
   return [
     h("h2", null, "Presets"),
+    hints("presets"),
     h(
       "div",
       { class: "row wrap" },
-      h(
-        "button",
-        {
-          title: "Spread the swarm equally, no wormholes",
-          onClick: () =>
-            apply((d) => {
-              const ks = keys();
-              d.weights = Object.fromEntries(ks.map((k) => [k, 1 / ks.length]));
-              d.routes = [];
-            }, "Equal split"),
-        },
-        "Equal split",
-      ),
-      h(
-        "button",
-        {
-          title: "All drones on the most promising target according to intelligence, then one target after another",
-          onClick: () =>
-            apply((d) => {
-              const sc = state.scenario;
-              const ks = keys().sort((a, b) => (sc.intel[b]?.guess ?? 0) - (sc.intel[a]?.guess ?? 0));
-              d.weights = Object.fromEntries(ks.map((k, i) => [k, i === 0 ? 1 : 0]));
-              d.routes = ks.slice(0, -1).map((k, i) => ({ from: k, to: ks[i + 1], share: 1 }));
-            }, "Strict sequence"),
-        },
-        "Strict sequence",
-      ),
-      h(
-        "button",
-        {
-          title: "Equal split, and every target passes its drones equally to all others (Holm)",
-          onClick: () =>
-            apply((d) => {
-              const ks = keys();
-              const m = ks.length;
-              d.weights = Object.fromEntries(ks.map((k) => [k, 1 / m]));
-              d.routes = m > 1 ? ks.flatMap((a) => ks.filter((b) => b !== a).map((b) => ({ from: a, to: b, share: 1 / (m - 1) }))) : [];
-            }, "Holm"),
-        },
-        "Holm",
-      ),
-      h(
-        "button",
-        {
-          class: "small",
-          onClick: () =>
-            apply((d) => {
-              d.routes = [];
-            }),
-        },
-        "Clear wormholes",
-      ),
+      r.presets.map((id) => buttons[id]),
+      r.wormholes
+        ? h(
+            "button",
+            {
+              class: "small",
+              onClick: () =>
+                apply((d) => {
+                  d.routes = [];
+                }),
+            },
+            "Clear wormholes",
+          )
+        : null,
     ),
-    h("p", { class: "hint" }, "Strict sequence orders targets by the intelligence best guess."),
+    r.presets.includes("strict") ? h("p", { class: "hint" }, "Strict sequence orders targets by the intelligence best guess.") : null,
   ];
 }
 
@@ -346,6 +391,7 @@ function redrawNetwork() {
   if (!svgEl) return;
   renderNetwork(svgEl, state.scenario, state.design, selection, {
     select,
+    allowRoutes: rules().wormholes,
     moveLabel: (i, off) =>
       commit((st) => {
         const r = st.design.routes[i];
@@ -376,12 +422,17 @@ function networkView() {
     svgEl.classList.add("network");
   }
   redrawNetwork();
+  const worm = rules().wormholes;
   return [
-    h("h2", null, "Drones & wormholes"),
+    h("h2", null, worm ? "Drones & wormholes" : "Drones"),
+    hints("network"),
     h(
       "p",
       { class: "hint" },
-      "Each circle is a target: one cannon against one ship class. Click a target to set its share of the swarm; fewer drones mean a stronger shield, and a target without drones cannot fall. Drag from one target to another to open a wormhole. Click a wormhole's label to set its share, or drag the label to bend the wormhole.",
+      "Each circle is a target: one cannon against one ship class. Click a target to set its share of the swarm; fewer drones mean a stronger shield, and a target without drones cannot fall.",
+      worm
+        ? " Drag from one target to another to open a wormhole. Click a wormhole's label to set its share, or drag the label to bend the wormhole."
+        : " Wormholes are not yet cleared for this mission: drones on a fallen target are lost.",
     ),
     h("div", { class: "network-wrap" }, h("div", { class: "network-canvas" }, svgEl), inspector()),
   ];
@@ -395,7 +446,7 @@ function inspector() {
   const box = h("div", { class: "inspector" });
   if (!selection) {
     const total = Object.values(d.weights).reduce((a, b) => a + b, 0);
-    box.append(h("p", { class: "dim" }, `Swarm assigned: ${pct(total, 1)}. Select a target or wormhole to edit it.`));
+    box.append(h("p", { class: "dim" }, `Swarm assigned: ${pct(total, 1)}. Select a target${rules().wormholes ? " or wormhole" : ""} to edit it.`));
     return box;
   }
   if (selection.kind === "route") {
@@ -452,8 +503,10 @@ function inspector() {
       total < 1 - 1e-9 ? h("button", { class: "small", onClick: () => commit((st) => (st.design.weights[key] = (st.design.weights[key] ?? 0) + (1 - total))) }, `+ unassigned ${pct(1 - total, 1)}`) : null,
       w > 0 ? h("button", { class: "small", onClick: () => commit((st) => (st.design.weights[key] = 0)) }, "None") : null,
     ),
-    h("h4", null, `Wormholes out (${pct(outTotal, 1)} of released drones)`),
-    outs.length
+    !rules().wormholes ? null : h("h4", null, `Wormholes out (${pct(outTotal, 1)} of released drones)`),
+    !rules().wormholes
+      ? null
+      : outs.length
       ? h(
           "ul",
           { class: "routes" },
@@ -521,7 +574,11 @@ function savedPanel() {
 
 /* ---------------- export / import ---------------- */
 
-function exportPanel() {
+function exportPanel(el: HTMLElement) {
+  const r = rules();
+  el.hidden = !r.exports;
+  if (el.hidden) return [];
+  if (!r.json && exportFormat === "json") exportFormat = "r";
   const sc = state.scenario;
   const d = state.design;
   const text = exportFormat === "json" ? toJSON(sc, d) : exportFormat === "r" ? toR(sc, d) : toTikZ(sc, d);
@@ -561,18 +618,18 @@ function exportPanel() {
     },
   }) as HTMLInputElement;
   return [
-    h("h2", null, "Export & import"),
+    h("h2", null, r.json ? "Export & import" : "Export"),
     h(
       "div",
       { class: "row wrap" },
       tab("r", "R (gMCP / graphicalMCP)"),
       tab("tikz", "LaTeX (TikZ)"),
-      tab("json", "JSON"),
+      r.json ? tab("json", "JSON") : null,
       h("span", { class: "spacer" }),
       h("button", { class: "small", onClick: () => navigator.clipboard?.writeText(text) }, "Copy"),
       h("button", { class: "small", onClick: () => download(fname, text) }, "Download"),
-      h("button", { class: "small", onClick: () => fileInput.click() }, "Import JSON…"),
-      fileInput,
+      r.json ? h("button", { class: "small", onClick: () => fileInput.click() }, "Import JSON…") : null,
+      r.json ? fileInput : null,
     ),
     importMessage ? h("p", { class: "hint" }, importMessage) : null,
     h("pre", { class: "code" }, text),

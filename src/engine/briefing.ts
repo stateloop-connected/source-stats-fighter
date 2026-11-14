@@ -37,11 +37,11 @@ export function briefingText(s: Scenario): string[] {
 
   const need = primary.map((k) => `${goalCount(k.goal, ships)} ${k.name}`);
   out.push(
-    `${s.formations} formation${s.formations === 1 ? " is" : "s are"} expected. Each formation sends one ship of every class against each of your ${C === 1 ? "cannon" : `${C} cannons`}, so ${ships} ships of each class will come${need.length ? `; you must stop ${list(need)} ships` : ""}.`,
+    `${s.formations} formation${s.formations === 1 ? " is" : "s are"} expected. Each formation sends one ship of every class against ${C === 1 ? "your cannon" : `each of your ${C} cannons`}, so ${ships} ${s.classes.length === 1 ? "ships" : "ships of each class"} will come${need.length ? `; you must stop ${list(need)} ships` : ""}.`,
   );
 
   out.push(
-    `You have ${s.energyAvailable} units of energy to share between your cannons and Ground Control. Command limits the drone swarm to ${pc(s.alpha)}, so that false kills stay rare.`,
+    `You have ${s.energyAvailable} units of energy to share between your ${C === 1 ? "cannon" : "cannons"} and Ground Control. Command limits the drone swarm to ${pc(s.alpha)}, so that false kills stay rare.`,
   );
 
   const order: Rating[] = ["strong", "moderate", "weak", "uncertain"];

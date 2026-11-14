@@ -1,5 +1,9 @@
 import { h, pct, num, fill } from "./dom";
-import { state } from "./state";
+import { state, activeMission, recordBattle, advanceCampaign } from "./state";
+import { art } from "./art";
+import { hints } from "./hints";
+import { currentRecord } from "../engine/campaign";
+import type { View } from "./campaign";
 import { bar } from "./charts";
 import { runSimulation } from "./simclient";
 import { compile, effectsFor, energyUsed, targets, validateDesign, type Problem, type Scenario, type Design, type TargetInfo } from "../engine/model";
@@ -43,12 +47,16 @@ let controls: HTMLElement;
 let tallyEl: HTMLElement;
 let logEl: HTMLElement;
 let debriefEl: HTMLElement;
+let hintsEl: HTMLElement;
 let built = false;
+let onContinue: (v: View) => void = () => {};
 
-export function battleScreen(container: HTMLElement) {
+export function battleScreen(container: HTMLElement, opts: { onContinue: (v: View) => void }) {
   root = container;
+  onContinue = opts.onContinue;
   if (built) return;
   built = true;
+  hintsEl = h("div");
   field = h("canvas", { class: "battle-field", "aria-label": "Battlefield" });
   statsCanvas = h("canvas", { class: "battle-stats", "aria-label": "Ship stats: impact against shield for every ship" });
   captionEl = h("div", { class: "battle-caption", "aria-live": "polite" });
@@ -57,6 +65,7 @@ export function battleScreen(container: HTMLElement) {
   logEl = h("ol", { class: "log" });
   debriefEl = h("div", { class: "debrief" });
   root.append(
+    hintsEl,
     controls,
     h("div", { class: "battle-boards" }, h("div", { class: "canvas-wrap field-wrap" }, field), h("div", { class: "canvas-wrap stats-wrap" }, statsCanvas)),
     captionEl,
@@ -80,8 +89,19 @@ function sizeCanvas() {
   draw();
 }
 
+/** Drop the battle on screen (after the workspace was swapped). */
+export function resetBattle() {
+  battle = null;
+  paused = false;
+  if (!built) return;
+  logEl.replaceChildren();
+  debriefEl.replaceChildren();
+}
+
 export function showBattle() {
   visible = true;
+  if (!battle) restore();
+  hintsEl.replaceChildren(...hints("battle"));
   renderControls();
   if (!battle) renderTally();
   draw();
@@ -93,31 +113,84 @@ export function hideBattle() {
   cancelAnimationFrame(raf);
 }
 
+/** In a campaign, a battle already launched is shown again from its stored record, at its end. */
+function restore() {
+  const c = state.campaign;
+  if (!activeMission() || !c || c.phase !== "launched") return;
+  const rec = currentRecord(c);
+  if (!rec) return;
+  const problem = compile(rec.scenario, rec.design, effectsFor(rec.scenario, "truth"));
+  const result = runBattle(problem, rec.seed);
+  battle = { scenario: rec.scenario, design: rec.design, problem, result, ts: targets(rec.scenario), fi: 0, t: 0, segs: timeline(result.formations[0]), loggedUpTo: 0 };
+  logEl.replaceChildren();
+  skip();
+}
+
+function replay() {
+  const b = battle;
+  if (!b) return;
+  b.fi = 0;
+  b.t = 0;
+  b.loggedUpTo = 0;
+  b.segs = timeline(b.result.formations[0]);
+  paused = false;
+  logEl.replaceChildren();
+  debriefEl.replaceChildren();
+  renderControls();
+  renderTally();
+  lastTs = 0;
+  loop();
+}
+
 function renderControls() {
   const issues = validateDesign(state.scenario, state.design).filter((i) => i.level === "error");
+  const mission = activeMission();
   const speedSel = h(
     "select",
     { onChange: (e: Event) => (speed = parseFloat((e.target as HTMLSelectElement).value)) },
     [0.25, 0.5, 1, 2, 4, 8, 16].map((v) => h("option", { value: String(v), selected: v === speed }, `${v}×`)),
   );
   const inProgress = battle && battle.fi < battle.problem.formations;
+  const ended = battle && !inProgress;
+  const launchBtn = mission
+    ? battle
+      ? ended
+        ? h("button", { onClick: () => replay() }, "Watch again")
+        : null
+      : h("button", { class: "primary", disabled: issues.length > 0, onClick: () => launch() }, "Launch battle")
+    : h("button", { class: "primary", disabled: issues.length > 0, onClick: () => launch() }, battle ? "Launch new battle" : "Launch battle");
   fill(
     controls,
-    h("button", { class: "primary", disabled: issues.length > 0, onClick: () => launch() }, battle ? "Launch new battle" : "Launch battle"),
+    launchBtn,
     inProgress ? h("button", { onClick: () => ((paused = !paused), renderControls()) }, paused ? "Resume" : "Pause") : null,
     inProgress ? h("button", { onClick: () => nextFormation() }, "Next formation") : null,
     inProgress ? h("button", { onClick: () => skip() }, "Skip to end") : null,
     h("label", null, "Speed ", speedSel),
     battle ? h("span", { class: "dim small" }, `Seed ${battle.result.seed} · design “${battle.design.name}”`) : null,
-    issues.length ? h("span", { class: "error" }, "✖ Fix the design in Setup before launching.") : null,
+    !battle && issues.length ? h("span", { class: "error" }, "✖ Fix the design in Setup before launching.") : null,
+    mission && !battle && !issues.length ? h("span", { class: "warn-text small" }, "Launching is final: this battle is fought once.") : null,
   );
 }
 
 function launch() {
+  const mission = activeMission();
+  if (mission && !confirm(`Launch the battle for “${mission.title}” with the design “${state.design.name}”? It is fought once, and the outcome stands.`)) return;
   const sc: Scenario = JSON.parse(JSON.stringify(state.scenario));
   const d: Design = JSON.parse(JSON.stringify(state.design));
   const problem = compile(sc, d, effectsFor(sc, "truth"));
   const result = runBattle(problem, randomSeed());
+  // the outcome is fixed and stored before anything is shown
+  if (mission)
+    recordBattle({
+      missionId: mission.id,
+      scenario: sc,
+      design: d,
+      seed: result.seed,
+      launchedAt: Date.now(),
+      won: result.allPrimaryMet,
+      tally: result.tally,
+      energyUsed: energyUsed(sc, d),
+    });
   battle = { scenario: sc, design: d, problem, result, ts: targets(sc), fi: 0, t: 0, segs: timeline(result.formations[0]), loggedUpTo: 0 };
   paused = false;
   logEl.replaceChildren();
@@ -262,7 +335,9 @@ function renderDebrief() {
       ),
     ),
   );
+  const mission = activeMission();
   const parts: (HTMLElement | null)[] = [
+    mission ? art(win ? "victory" : "defeat", 320, 120, { fallback: win ? "wreckage" : "fleet", maxScale: 3, class: "mission-art" }) : null,
     h("h2", { class: win ? "victory" : "defeat" }, win ? "VICTORY — all primary goals met" : "DEFEAT — a primary goal was missed"),
     goals,
     h("p", null, `Energy used: ${used} of ${sc.energyAvailable}${used < sc.energyAvailable ? ` (${sc.energyAvailable - used} returned to the reserve)` : ""}.`),
@@ -324,6 +399,26 @@ function renderDebrief() {
         }),
       ),
       h("p", { class: "remark" }, "Command notes: if a target fell far less often than intelligence promised, consider that intelligence may be wrong. Try the simulator with the low end of the range."),
+    );
+  }
+  if (mission) {
+    parts.push(
+      h(
+        "div",
+        { class: "row continue" },
+        h(
+          "button",
+          {
+            class: "primary",
+            onClick: () => {
+              advanceCampaign();
+              onContinue(activeMission() ? "briefing" : "end");
+            },
+          },
+          "Continue",
+        ),
+        h("span", { class: "dim small" }, "The campaign moves on to the next mission."),
+      ),
     );
   }
   debriefEl.replaceChildren(h("section", { class: "panel" }, parts));

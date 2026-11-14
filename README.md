@@ -1,13 +1,13 @@
-# Alpha Wars ’89 — version 0.2
+# Alpha Wars ’89 — version 0.3 (in progress)
 
-A browser game about planetary defence that is secretly about graphical multiple testing procedures: setup, simulation and battle on one configurable scenario. Version 0.2 follows `../Next Version Plan.md`.
+A browser game about planetary defence that is secretly about graphical multiple testing procedures. Version 0.3 adds a campaign of authored missions on top of the free-training workbench of 0.2, following `../Campaign Version Plan.md`. Built so far: build steps 1–3 (mission data and rules, campaign shell, missions 1–3 with hints and balance checks).
 
 ## Run locally
 
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # engine tests (Vitest)
+npm test         # engine tests and mission balance checks (Vitest)
 npm run build    # static site in dist/
 ```
 
@@ -22,8 +22,14 @@ npm run build    # static site in dist/
   - `geometry.ts` layout of the network editor, shared with the TikZ export
   - `migrate.ts` versioned saved state and files: checks and upgrades
   - `export.ts` JSON, R (gMCP / graphicalMCP) and TikZ export
+  - `missions.ts` missions as data: scenario, rules (which controls are open), story text, hints, the rival's reference design, picture names; characters
+  - `campaign.ts` a campaign run: current mission, phase, record of battles fought, the starting design of each mission
+  - `missions.test.ts` balance checks: each mission's lesson holds in numbers
   - `engine.test.ts` tests: worked examples, Holm and closed-testing agreement, closed-form power, FWER ≤ α under the global null, correlation 0.5 with shared Ground Control, lane counting, impact parts, file upgrades, briefing
 - `src/ui/` — screens
+  - `state.ts` saved state (data version 3): two workspaces, free training and the current mission, plus the campaign
+  - `campaign.ts` start screen, mission briefing, end of the run; `hints.ts` the chief scientist's hints
+  - `art.ts` picture slots: `public/art/<name>.png` enlarged by whole factors without smoothing, with drawn fallbacks when a file is missing
   - `panel.ts` panels that redraw only when their data changes and keep keyboard focus
   - `setup.ts`, `network.ts` Setup screen and SVG network editor
   - `simulation.ts`, `sim.worker.ts` Simulation screen and its Web Worker

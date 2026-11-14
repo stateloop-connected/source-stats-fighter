@@ -3,8 +3,9 @@ import { GC, type Design, type Scenario } from "./model";
 /**
  * Version of saved state and exported files.
  * 1: MVP. 2: lanes (each cannon faces its own ships), optional edge label positions on routes.
+ * 3: campaign. Saved state gains the campaign run and a second workspace; exported files are unchanged.
  */
-export const DATA_VERSION = 2;
+export const DATA_VERSION = 3;
 
 const isObj = (x: unknown): x is Record<string, any> => !!x && typeof x === "object" && !Array.isArray(x);
 const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);

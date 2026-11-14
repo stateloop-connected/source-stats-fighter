@@ -1,5 +1,6 @@
 import { h, numInput, pct, tip } from "./dom";
-import { state, commit } from "./state";
+import { state, commit, rules } from "./state";
+import { hints, openHints } from "./hints";
 import { panel, type Panel } from "./panel";
 import { bar } from "./charts";
 import { runSimulation } from "./simclient";
@@ -10,7 +11,7 @@ import { randomSeed } from "../engine/rng";
 let running = false;
 let progress = 0;
 let error = "";
-let comparison: { names: string[]; energies: number[]; results: SimResult[]; label: string } | null = null;
+let comparison: { names: string[]; energies: number[]; results: SimResult[]; label: string; skipped: string[] } | null = null;
 const unchecked = new Set<string>();
 
 const TIPS = {
@@ -41,9 +42,23 @@ function assumptionLabel() {
   return ASSUMPTIONS.find((a) => a.id === effectiveAssumption())!.label;
 }
 
+/** Assumptions the simulator may use here: the mission's rules, and never the truth while it is classified. */
+function allowedAssumptions(): Assumption[] {
+  const ok = rules().simulator.filter((a) => !(a === "truth" && state.scenario.hideTruth));
+  return ok.length ? ok : ["intel"];
+}
+
 function effectiveAssumption(): Assumption {
   const a = state.sim.assumption;
-  return a === "truth" && state.scenario.hideTruth ? "intel" : a;
+  const ok = allowedAssumptions();
+  return ok.includes(a) ? a : ok[0];
+}
+
+/** Drop the comparison and rebuild on the next render (after the workspace was swapped). */
+export function resetSimulation() {
+  comparison = null;
+  error = "";
+  mountedIn = null;
 }
 
 function effects() {
@@ -55,7 +70,7 @@ export function renderSimulation(root: HTMLElement) {
     mountedIn = root;
     const sec = () => h("section", { class: "panel" });
     const st = () => state;
-    const settings = panel(settingsPanel, () => [st().scenario, st().sim, st().design, running, error], sec());
+    const settings = panel(settingsPanel, () => [st().scenario, st().sim, st().design, running, error, rules().simulator, openHints("simulator")], sec());
     const compare = panel(comparePanel, () => [st().saved.map((x) => [x.id, x.design.name]), running], sec());
     const results = panel(resultsPanel, () => [st().lastSim, st().scenario.classes, st().scenario.cannons, st().scenario.alpha], sec());
     const comp = panel(comparisonPanel, () => [comparison, st().scenario.classes, st().scenario.energyAvailable], h("div"));
@@ -70,7 +85,8 @@ function settingsPanel() {
   const sim = state.sim;
   const ts = targets(sc);
   const issues = validateDesign(sc, state.design).filter((i) => i.level === "error");
-  const radios = ASSUMPTIONS.map((a) => {
+  const allowed = rules().simulator;
+  const radios = ASSUMPTIONS.filter((a) => allowed.includes(a.id)).map((a) => {
     const disabled = a.id === "truth" && sc.hideTruth;
     return h(
       "label",
@@ -102,8 +118,9 @@ function settingsPanel() {
       : null;
   return [
     h("h2", null, "Training simulator"),
+    hints("simulator"),
     h("p", { class: "hint" }, "Runs the same battle many times with your current design. The simulator is only as right as its assumptions."),
-    h("div", { class: "radios" }, radios),
+    radios.length > 1 ? h("div", { class: "radios" }, radios) : h("p", null, "Assumption: ", h("strong", null, assumptionLabel().toLowerCase()), effectiveAssumption() === "truth" ? " (known for this mission)" : ""),
     custom,
     h(
       "div",
@@ -219,7 +236,12 @@ async function runComparison() {
   const sc = state.scenario;
   const designs: Design[] = [state.design, ...state.saved.filter((sd) => !unchecked.has(sd.id)).map((sd) => sd.design)];
   const valid = designs.filter((d) => validateDesign(sc, d).every((i) => i.level !== "error"));
-  if (!valid.length) return;
+  const skipped = designs.filter((d) => !valid.includes(d)).map((d) => `${d.name}: ${validateDesign(sc, d).find((i) => i.level === "error")!.message}`);
+  if (!valid.length) {
+    error = `None of the designs can fight this battle. ${skipped.join(" ")}`;
+    rerender();
+    return;
+  }
   error = "";
   running = true;
   progress = 0;
@@ -236,6 +258,7 @@ async function runComparison() {
       energies: valid.map((d) => energyUsed(sc, d)),
       results,
       label: assumptionLabel(),
+      skipped,
     };
   } catch (e) {
     if ((e as Error).message !== "cancelled") error = (e as Error).message;
@@ -279,5 +302,6 @@ function comparisonPanel() {
         rows,
       ),
     ),
+    c.skipped.length ? h("p", { class: "warn small" }, `Left out because they cannot fight this battle — ${c.skipped.join(" · ")}`) : null,
   );
 }

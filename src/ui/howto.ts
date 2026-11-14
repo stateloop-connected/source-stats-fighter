@@ -12,6 +12,12 @@ export function renderHowTo(root: HTMLElement) {
         null,
         "An alien fleet approaches in a series of formations. Each formation sends one ship of every class down each cannon's lane. Your job: stop enough ships of each class to meet Command's goals, counted over all lanes, with as little energy as possible. The briefing on the Setup screen states the goals.",
       ),
+      h("h3", null, "Campaign and free training"),
+      h(
+        "p",
+        null,
+        "A campaign is a run of missions, each adding one idea. Every mission starts with a briefing, then you plan in Setup and rehearse in Simulation. Launching the battle is final: each battle is fought once, and the run moves on whether it was won or lost. Early missions keep some controls closed until they are needed, and the chief scientist leaves a few hints that you can dismiss. Free training is the open workbench: every control, any scenario, as many battles as you like. Missions fought in a run can be loaded into free training to study them.",
+      ),
       h("h3", null, "1. Setup"),
       h(
         "ul",

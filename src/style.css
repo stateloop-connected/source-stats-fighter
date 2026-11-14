@@ -752,3 +752,180 @@ ol.log li {
 .tip.open .tip-text {
   display: block;
 }
+
+/* ---------------- version 0.3: campaign ---------------- */
+
+.ctx-bar {
+  font-size: 13px;
+  color: var(--text);
+}
+.ctx-bar strong {
+  color: var(--amber);
+}
+.menu-btn {
+  color: var(--dim);
+}
+
+/* picture slots: whole-factor enlargement, no smoothing */
+.art {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin: 0 auto 12px;
+}
+.art > img,
+.art > .art-frame {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+.art-frame {
+  position: relative;
+}
+.art-frame canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.art > img {
+  width: auto;
+}
+.art-label {
+  position: absolute;
+  left: 6px;
+  bottom: 4px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+/* start screen */
+.start {
+  max-width: 980px;
+  margin: 8px auto 0;
+}
+.title-art {
+  position: relative;
+}
+.title-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 7%;
+  text-align: center;
+  pointer-events: none;
+}
+.title-name {
+  font-size: clamp(26px, 6vw, 56px);
+  letter-spacing: 0.25em;
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(57, 255, 136, 0.6);
+  font-weight: bold;
+}
+.title-name .year {
+  color: var(--amber);
+}
+.title-sub {
+  color: var(--text);
+  letter-spacing: 0.3em;
+  font-size: clamp(10px, 2vw, 14px);
+  text-transform: uppercase;
+}
+.start .menu {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  max-width: 420px;
+  margin: 6px auto 14px;
+}
+.start .menu button {
+  padding: 10px 14px;
+  font-size: 15px;
+  text-align: left;
+}
+.c {
+  text-align: center;
+}
+
+/* briefing */
+.briefing-screen {
+  max-width: 1000px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.mission-head {
+  margin-bottom: 10px;
+}
+.mission-head h2 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  color: var(--amber);
+}
+.mission-no {
+  color: var(--dim);
+  letter-spacing: 0.2em;
+  font-size: 12px;
+}
+.speaker {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin: 6px 0 10px;
+}
+.speaker .portrait {
+  justify-content: flex-start;
+  width: 192px;
+  max-width: 40vw;
+  flex: 0 0 auto;
+  margin: 0;
+}
+.speech {
+  flex: 1;
+}
+.speech .who {
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.speech p {
+  margin: 0 0 8px;
+}
+@media (max-width: 560px) {
+  .speaker {
+    flex-direction: column;
+  }
+}
+
+/* the chief scientist's hints */
+.hint-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px dashed var(--cyan);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 6px 0 10px;
+  background: rgba(77, 225, 255, 0.05);
+}
+.hint-card .hint-portrait {
+  width: 48px;
+  flex: 0 0 48px;
+  margin: 0;
+}
+.hint-body {
+  flex: 1;
+}
+.hint-who {
+  color: var(--cyan);
+  font-size: 12px;
+}
+.hint-body p {
+  margin: 2px 0 0;
+}
+.hint-close {
+  flex: 0 0 auto;
+}
+
+.debrief .row.continue {
+  margin-top: 14px;
+}

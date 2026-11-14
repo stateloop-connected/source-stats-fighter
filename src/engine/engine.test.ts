@@ -7,6 +7,7 @@ import { compile, defaultDesign, defaultScenario, effectsFor, information, type 
 import { fromJSON, toJSON, toR, toTikZ } from "./export";
 import { briefingText, rate } from "./briefing";
 import { edgeGeometry } from "./geometry";
+import { DATA_VERSION } from "./migrate";
 
 /* ---------- helpers ---------- */
 
@@ -372,7 +373,7 @@ describe("export", () => {
     const v1 = JSON.parse(toJSON(s, d));
     v1.version = 1;
     const up = fromJSON(JSON.stringify(v1));
-    expect(up.version).toBe(2);
+    expect(up.version).toBe(DATA_VERSION);
     expect(up.notes.length).toBe(1);
     expect(up.design).toEqual(d);
     const newer = { ...v1, version: 99 };
