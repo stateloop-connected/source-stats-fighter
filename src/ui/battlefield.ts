@@ -24,6 +24,77 @@ export const PAL = {
 export const CANNON_COLORS = ["#ff7a3d", "#c07cff", "#4dd2ff"];
 export const DRONES = 40;
 
+/* ---------------- sprites (public/art), each with a drawn fallback ---------------- */
+
+/** Every sprite is drawn at this multiple of its native size, without smoothing. */
+export const SPRITE_SCALE = 2;
+const SHIP_KINDS = ["attack", "recon", "supply", "escort"] as const;
+const sprites = new Map<string, HTMLImageElement>();
+const spriteListeners = new Set<() => void>();
+
+/** Called when a sprite file has loaded, so a still picture can be drawn again. */
+export function onSpriteLoad(fn: () => void) {
+  spriteListeners.add(fn);
+}
+
+/** The sprite `art/<name>.png` once it has loaded; null while loading or when the file is missing. */
+function sprite(name: string): HTMLImageElement | null {
+  if (typeof Image === "undefined") return null;
+  let img = sprites.get(name);
+  if (!img) {
+    img = new Image();
+    img.onload = () => spriteListeners.forEach((f) => f());
+    img.src = `${import.meta.env.BASE_URL}art/${name}.png`;
+    sprites.set(name, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
+/**
+ * Which ship a class is drawn as: by name (Attack, Recon, Supply, Escort), otherwise by position.
+ * Returns an index into SHIP_KINDS.
+ */
+export function shipKind(className: string, k: number): number {
+  const n = className.trim().toLowerCase();
+  const i = SHIP_KINDS.findIndex((x) => n === x || n.startsWith(x));
+  return i >= 0 ? i : k % SHIP_KINDS.length;
+}
+
+/**
+ * Draw a sprite at SPRITE_SCALE, centred on x. Vertically it is centred on y, or, given a number,
+ * that native pixel row (the sprite's foot) stands on y.
+ */
+function blit(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, anchor: number | "centre", sx = 0, sw = img.naturalWidth) {
+  const w = sw * SPRITE_SCALE;
+  const h = img.naturalHeight * SPRITE_SCALE;
+  const smooth = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, sx, 0, sw, img.naturalHeight, Math.round(x - w / 2), Math.round(anchor === "centre" ? y - h / 2 : y - (anchor + 1) * SPRITE_SCALE), w, h);
+  ctx.imageSmoothingEnabled = smooth;
+}
+
+/** Draw a machine darkened when it has no energy. */
+function darkened(ctx: CanvasRenderingContext2D, off: boolean, draw: () => void) {
+  if (!off) return draw();
+  ctx.save();
+  if ("filter" in ctx) ctx.filter = "grayscale(1) brightness(0.55)";
+  else (ctx as CanvasRenderingContext2D).globalAlpha *= 0.45;
+  draw();
+  ctx.restore();
+}
+
+/** Where a cannon's beam starts: the muzzle at the top of its sprite, or the tip of the drawn barrel. */
+function muzzle(p: Pt, c: number): Pt {
+  const img = sprite(`cannon-${(c % 3) + 1}`);
+  return img ? { x: p.x, y: p.y + CANNON_FOOT - (CANNON_FOOT_ROW + 1 - CANNON_MUZZLE_ROW) * SPRITE_SCALE } : { x: p.x, y: p.y - 22 };
+}
+/** The cannon sprite stands this far below the cannon's point (on the horizon). */
+const CANNON_FOOT = 6;
+/** Native rows of the delivered sprites: the cannons' muzzle and foot, Ground Control's foot. */
+const CANNON_MUZZLE_ROW = 1;
+const CANNON_FOOT_ROW = 30;
+const GC_FOOT_ROW = 27;
+
 /* ---------------- layout ---------------- */
 
 export const FW = 720;
@@ -201,7 +272,10 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
     ctx.stroke();
   }
   ctx.setLineDash([]);
-  drawDish(ctx, L.gc.x, L.gc.y, (v.design.energy.gc ?? 0) > 0);
+  const gcOn = (v.design.energy.gc ?? 0) > 0;
+  const gcImg = sprite("ground-control");
+  if (gcImg) darkened(ctx, !gcOn, () => blit(ctx, gcImg, L.gc.x, L.gc.y + 14, GC_FOOT_ROW));
+  else drawDish(ctx, L.gc.x, L.gc.y, gcOn);
   ctx.fillStyle = PAL.green;
   ctx.font = "11px ui-monospace, monospace";
   ctx.textAlign = "center";
@@ -212,7 +286,9 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
     const p = L.cannon(c);
     const on = (v.design.energy[can.id] ?? 0) > 0 && (v.design.energy.gc ?? 0) > 0;
     const color = on ? CANNON_COLORS[c % CANNON_COLORS.length] : PAL.dim;
-    drawCannon(ctx, p, color);
+    const img = sprite(`cannon-${(c % 3) + 1}`);
+    if (img) darkened(ctx, !on, () => blit(ctx, img, p.x, p.y + CANNON_FOOT, CANNON_FOOT_ROW));
+    else drawCannon(ctx, p, color);
     ctx.fillStyle = color;
     ctx.font = "12px ui-monospace, monospace";
     ctx.textAlign = "center";
@@ -230,7 +306,7 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
     for (let i = 0; i < m; i++) {
       if (!mo.firedAt[i]) continue;
       const c = Math.floor(i / K);
-      const a = { x: L.cannon(c).x, y: L.cannon(c).y - 22 };
+      const a = muzzle(L.cannon(c), c);
       const b = pos(i);
       // ships further up the lane are reached by beams that bow around the nearer ships
       const below = K - 1 - L.rowOf[i % K];
@@ -254,14 +330,15 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
   }
 
   // ships
+  const kinds = sc.classes.map((cls, k) => shipKind(cls.name, k));
   for (let i = 0; i < m; i++) {
     if (!visible(i)) continue;
     const k = i % K;
     const p = pos(i);
     const exploding = mo?.exploding === i;
     if (exploding) {
+      if (mo!.q < 0.35) drawShip(ctx, p.x, p.y, kinds[k], 1 - mo!.q * 2.5);
       drawExplosion(ctx, p.x, p.y, mo!.q, i);
-      if (mo!.q < 0.35) drawShip(ctx, p.x, p.y, k, 1 - mo!.q * 2.5);
       continue;
     }
     ctx.globalAlpha = 1 - leave * 0.7;
@@ -290,7 +367,7 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    drawShip(ctx, p.x, p.y, k, 1);
+    drawShip(ctx, p.x, p.y, kinds[k], 1);
     // drones orbit the ship
     drawDrones(ctx, p.x, p.y, Math.round(w * DRONES), now, i);
     // Ground Control's reticle: off-centre by the class's tracking error, the same in every lane
@@ -411,8 +488,17 @@ function drawDish(ctx: CanvasRenderingContext2D, x: number, y: number, on: boole
   ctx.stroke();
 }
 
-/** Enemy ship pointing down towards the planet; shape by class. */
-export function drawShip(ctx: CanvasRenderingContext2D, x: number, y: number, k: number, a: number, scale = 1) {
+/** Enemy ship pointing down towards the planet; `kind` indexes SHIP_KINDS (attack, recon, supply, escort). */
+export function drawShip(ctx: CanvasRenderingContext2D, x: number, y: number, kind: number, a: number, scale = 1) {
+  const img = sprite(`ship-${SHIP_KINDS[kind % SHIP_KINDS.length]}`);
+  if (img && scale === 1) {
+    const ga = ctx.globalAlpha;
+    ctx.globalAlpha *= a;
+    blit(ctx, img, x, y, "centre");
+    ctx.globalAlpha = ga;
+    return;
+  }
+  const k = kind;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
@@ -457,7 +543,16 @@ export function drawShip(ctx: CanvasRenderingContext2D, x: number, y: number, k:
   ctx.restore();
 }
 
+const EXPLOSION_FRAMES = 6;
+
 function drawExplosion(ctx: CanvasRenderingContext2D, x: number, y: number, q: number, seed: number) {
+  const strip = sprite("explosion");
+  if (strip) {
+    const fw = strip.naturalWidth / EXPLOSION_FRAMES;
+    const f = Math.min(EXPLOSION_FRAMES - 1, Math.floor(q * EXPLOSION_FRAMES));
+    blit(ctx, strip, x, y, "centre", f * fw, fw);
+    return;
+  }
   const r = new Rng(1000 + seed);
   ctx.globalAlpha = Math.max(0, 1 - q);
   ctx.strokeStyle = PAL.amber;

@@ -31,6 +31,7 @@ npm run build    # static site in dist/
   - `state.ts` saved state (data version 3): two workspaces, free training and the current mission, plus the campaign
   - `campaign.ts` start screen, mission briefing, service record; `hints.ts` the chief scientist's hints
   - `art.ts` picture slots: `public/art/<name>.png` enlarged by whole factors without smoothing, with drawn fallbacks when a file is missing
+  - `battlefield.ts` also loads the battle sprites (`ship-attack|recon|supply|escort`, `cannon-1..3`, `ground-control`, `explosion`) from `public/art/` when present, drawn at 2× without smoothing; ships are matched to classes by name. Cannons stand on native row 30 and fire from row 1; Ground Control stands on row 27 (constants in `battlefield.ts`; change them if replacement sprites move their feet). See `../Battlefield Sprites Brief.md`
   - `panel.ts` panels that redraw only when their data changes and keep keyboard focus
   - `setup.ts`, `network.ts` Setup screen and SVG network editor
   - `simulation.ts`, `sim.worker.ts` Simulation screen and its Web Worker

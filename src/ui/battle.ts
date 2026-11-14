@@ -13,7 +13,7 @@ import { runBattle, goalCount, type BattleResult } from "../engine/battle";
 import { shield } from "../engine/normal";
 import { randomSeed } from "../engine/rng";
 import { timeline, momentAt, totalDuration, HIT_AT, type Seg, type Moment } from "./timeline";
-import { drawField, FW, FH } from "./battlefield";
+import { drawField, FW, FH, onSpriteLoad } from "./battlefield";
 import { drawStats, SW } from "./stats";
 
 /* ---------------- battle state ---------------- */
@@ -78,6 +78,8 @@ export function battleScreen(container: HTMLElement, opts: { onContinue: (v: Vie
   statsCtx = statsCanvas.getContext("2d")!;
   sizeCanvas();
   window.addEventListener("resize", sizeCanvas);
+  // a sprite that arrives after the first picture replaces its drawn fallback
+  onSpriteLoad(() => draw());
 }
 
 function sizeCanvas() {

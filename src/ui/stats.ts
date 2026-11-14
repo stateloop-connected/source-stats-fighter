@@ -7,6 +7,8 @@ import type { Moment } from "./timeline";
 /** Stats panel beside the battlefield: one row per ship, in the same arrangement as the lanes. */
 export const SW = 380;
 const ZMAX = 5;
+/** Shorter notes for narrow columns. */
+const SHORT: Record<string, string> = { "no drones · not fired at": "no drones", "cannon offline": "offline" };
 
 export interface StatsView {
   sc: Scenario;
@@ -135,6 +137,10 @@ export function drawStats(ctx: CanvasRenderingContext2D, v: StatsView) {
         statusColor = PAL.red;
       }
       ctx.font = "10px ui-monospace, monospace";
+      // narrow columns (three cannons): shorten the status to its symbol, then the note
+      const fits = () => ctx.measureText(note).width + (status ? ctx.measureText(status).width + 6 : 0) <= bw;
+      if (!fits()) status = status.split(" ")[0];
+      if (!fits()) note = SHORT[note] ?? note.replace(/^impact /, "");
       ctx.fillStyle = noteColor;
       ctx.fillText(note, left, y - 11);
       if (status) {
