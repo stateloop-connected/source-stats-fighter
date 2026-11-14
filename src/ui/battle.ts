@@ -571,6 +571,8 @@ function caption(b: Battle | null, fr: Battle["result"]["formations"][number] | 
   switch (mo.seg.kind) {
     case "arrive":
       return `${head}approaching.`;
+    case "deploy":
+      return `${head}Ground Control launches the drones. Each swarm drains its ship's shield.`;
     case "fire": {
       const round = mo.seg.round;
       if (!mo.firedAt.some(Boolean)) return `${head}${round === 0 ? "no ship holds drones, so the cannons hold fire." : "no standing ship holds drones; the cannons hold fire."}`;
@@ -592,7 +594,7 @@ function caption(b: Battle | null, fr: Battle["result"]["formations"][number] | 
     case "pause": {
       const stranded = fr.finalWeights.reduce((s, w, i) => s + (fr.rejected[i] ? 0 : w), 0);
       const passed = fr.rejected.filter((r) => !r).length;
-      return `${head}${fr.order.length === 0 ? "no shield broken, the whole formation passes." : `${fr.order.length} ship${fr.order.length === 1 ? "" : "s"} stopped, ${passed} pass${passed === 1 ? "es" : ""}.`}${stranded > 1e-9 ? ` ${pct(stranded)} of the swarm is stranded.` : ""}`;
+      return `${head}${fr.order.length === 0 ? "no shield broken, the whole formation gets through, bombs the planet and flies off." : `${fr.order.length} ship${fr.order.length === 1 ? "" : "s"} stopped${passed ? `, ${passed} get${passed === 1 ? "s" : ""} through, bomb${passed === 1 ? "s" : ""} the planet and fl${passed === 1 ? "ies" : "y"} off` : ", none get through"}.`}${stranded > 1e-9 ? ` ${pct(stranded)} of the swarm is stranded.` : ""}`;
     }
   }
   return "";

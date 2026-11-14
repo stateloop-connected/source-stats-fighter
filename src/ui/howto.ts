@@ -63,7 +63,7 @@ export function renderHowTo(root: HTMLElement) {
       h(
         "p",
         null,
-        "Launch the battle against the real enemy. In each formation the cannons fire at every ship in their lane that holds drones. A ship falls when the impact beats its shield; its drones then fly on, the cannons fire again, and further ships may fall. A ship without drones cannot fall, so it is not fired at until drones reach it through a wormhole. Survivors fly on to the planet.",
+        "Launch the battle against the real enemy. Each formation flies in, and Ground Control launches your drones to their ships. The ring around a ship is its shield: a full ring with an outer circle cannot be broken, and the shorter the ring, the weaker the shield. Drones drain it as they arrive. The cannons then fire an energy bolt at every ship in their lane that holds drones. A ship falls when the impact beats its shield; its drones then fly on, the cannons fire again, and further ships may fall. A ship without drones cannot fall, so it is not fired at until drones reach it through a wormhole. Survivors bomb the planet and fly off; other defences will have to deal with them.",
       ),
       h(
         "p",

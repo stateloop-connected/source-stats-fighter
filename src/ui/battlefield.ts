@@ -3,7 +3,7 @@ import type { FormationResult } from "../engine/battle";
 import { shield } from "../engine/normal";
 import { Rng } from "../engine/rng";
 import { curve } from "./network";
-import { HIT_AT, type Moment } from "./timeline";
+import { deployProgress, HIT_AT, type Moment } from "./timeline";
 
 /* ---------------- palette ---------------- */
 
@@ -167,6 +167,11 @@ const stars = (() => {
 })();
 
 const SHIP_R = 28;
+/**
+ * The survivors' run, as shares of the resolve segment: they descend to a low pass beside their cannon,
+ * drop their bombs, then bank and fly off to the nearer side (other defences will have to deal with them).
+ */
+const RUN = { descend: 0.32, release: 0.3, bombFall: 0.16, turn: 0.36, turnDur: 0.14, bombs: 2 };
 
 export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
   const { sc, fr, mo, now } = v;
@@ -226,17 +231,29 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
   // where each ship is now
   const arrive = mo ? mo.arrive : 1;
   const leave = mo ? mo.leave : 0;
+  // survivors' bombing run: the low pass beside the cannon, and the side they leave by
+  const passAt = (i: number): Pt => {
+    const r = L.rowOf[i % K];
+    const x = L.laneX(Math.floor(i / K)) + (r % 2 === 0 ? 1 : -1) * (34 + 16 * r);
+    return { x, y: L.surfaceY(x) - 72 - 10 * r };
+  };
+  const exitSide = (i: number) => (passAt(i).x < FW / 2 ? -1 : 1);
+  const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+  const turnOf = (i: number) => -exitSide(i) * (Math.PI / 2) * smooth((leave - RUN.turn) / RUN.turnDur);
   const pos = (i: number): Pt => {
     const c = Math.floor(i / K);
     const k = i % K;
     const p = L.ship(c, k);
-    const y0 = p.y - (1 - arrive) * 520;
-    const cy = L.cannon(c).y - 30;
-    return { x: p.x, y: y0 + (cy - y0) * leave };
+    if (leave <= 0) return { x: p.x, y: p.y - (1 - arrive) * 520 };
+    const b = passAt(i);
+    if (leave < RUN.turn) return bez(p, { x: p.x, y: b.y }, b, smooth(leave / RUN.descend));
+    const side = exitSide(i);
+    const u = Math.pow((leave - RUN.turn) / (1 - RUN.turn), 1.6);
+    return bez(b, { x: b.x + side * 90, y: b.y }, { x: side < 0 ? -60 : FW + 60, y: b.y - 170 }, u);
   };
   const m = L.C * K;
   const standing = (i: number) => !(mo && mo.fallen[i] && mo.exploding !== i);
-  const visible = (i: number) => standing(i) && leave < 0.98;
+  const visible = (i: number) => standing(i) && leave < 1;
 
   // wormholes between ships
   const idx = new Map<string, number>();
@@ -298,34 +315,23 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
     ctx.fillText(on ? `energy ${v.design.energy[can.id] ?? 0}` : "offline", p.x, p.y + 41);
   });
 
-  // beams (before ships, so ships sit on top)
+  // cannon fire: an energy bolt per ship fired at, flying on a path that bows around nearer ships
+  const shots: { i: number; at: Pt; color: string; broke: boolean }[] = [];
   if (mo && fr && mo.seg.kind === "fire") {
     const q = mo.q;
-    const reach = Math.min(1, q / HIT_AT);
-    const fade = q < HIT_AT ? 1 : Math.max(0, 1 - (q - HIT_AT) / (1 - HIT_AT));
     for (let i = 0; i < m; i++) {
       if (!mo.firedAt[i]) continue;
       const c = Math.floor(i / K);
       const a = muzzle(L.cannon(c), c);
       const b = pos(i);
-      // ships further up the lane are reached by beams that bow around the nearer ships
       const below = K - 1 - L.rowOf[i % K];
       const side = below % 2 === 1 ? -1 : 1;
       const cp = { x: a.x + side * 52 * below, y: (a.y + b.y) / 2 };
-      ctx.globalAlpha = 0.25 + 0.75 * fade;
-      ctx.strokeStyle = CANNON_COLORS[c % CANNON_COLORS.length];
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      for (let s = 1; s <= 40; s++) {
-        const t = (s / 40) * reach;
-        const x = (1 - t) ** 2 * a.x + 2 * (1 - t) * t * cp.x + t * t * b.x;
-        const y = (1 - t) ** 2 * a.y + 2 * (1 - t) * t * cp.y + t * t * b.y;
-        if (Math.hypot(x - b.x, y - b.y) < SHIP_R + 4) break;
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+      const color = CANNON_COLORS[c % CANNON_COLORS.length];
+      const tHit = shieldContact(a, cp, b);
+      if (q < 0.12) drawFlash(ctx, a, color, 1 - q / 0.12);
+      if (q < HIT_AT) drawBolt(ctx, a, cp, b, (q / HIT_AT) * tHit, color);
+      else shots.push({ i, at: bez(a, cp, b, tHit), color, broke: fr.shots[i] > shield(weights[i] ?? 0, alpha) });
     }
   }
 
@@ -341,34 +347,29 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
       drawExplosion(ctx, p.x, p.y, mo!.q, i);
       continue;
     }
-    ctx.globalAlpha = 1 - leave * 0.7;
+    // shield and drones fall away as the ship goes in
+    const fadeOut = Math.max(0, 1 - leave * 5);
+    ctx.globalAlpha = fadeOut;
     const w = weights[i] ?? 0;
     const sh = shield(w, alpha);
-    // shield bubble: thick and bright when strong, a double ring when there are no drones (never fired at)
+    // shield: a gauge ring, full when unbreakable (no drones), shorter the weaker it is (scale 0–5,
+    // as in the stats panel). Drones drain it as they arrive; the drained part fades out in white.
     const hitNow = mo && mo.seg.kind === "fire" && mo.firedAt[i] && mo.q >= HIT_AT ? 1 - (mo.q - HIT_AT) / (1 - HIT_AT) : 0;
-    if (!Number.isFinite(sh)) {
-      ctx.strokeStyle = `rgba(200,240,255,${0.35 + 0.6 * hitNow})`;
-      ctx.lineWidth = 3 + 3 * hitNow;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, SHIP_R + 4, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, SHIP_R + 9, 0, Math.PI * 2);
-      ctx.stroke();
-    } else {
-      const strength = Math.max(0.1, Math.min(1, (sh - 1) / 3));
-      const broke = fr && hitNow > 0 && fr.shots[i] > sh;
-      ctx.strokeStyle = broke ? `rgba(255,77,94,${0.4 + 0.6 * hitNow})` : `rgba(77,225,255,${0.25 + 0.5 * strength + 0.3 * hitNow})`;
-      ctx.lineWidth = 1 + 4 * strength;
-      ctx.setLineDash(broke ? [6, 4] : []);
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, SHIP_R + 4, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
+    const broke = !!fr && hitNow > 0 && fr.shots[i] > sh;
+    const drainFrom = mo && (mo.seg.kind === "deploy" || mo.seg.kind === "travel") ? shieldFrac(shield(mo.weightsFrom[i] ?? 0, alpha)) : null;
+    drawShield(ctx, p.x, p.y, shieldFrac(sh), drainFrom, mo ? 1 - mo.q : 0, hitNow, broke);
+    ctx.globalAlpha = 1;
+    const angle = leave > 0 ? turnOf(i) : 0;
+    if (leave > 0) {
+      // engines: a hot trail behind the ship, strongest on the way down and on the way out
+      const heat = leave < RUN.descend ? 0.4 + 0.6 * (leave / RUN.descend) : leave < RUN.turn ? 0.5 : 0.6 + 0.4 * ((leave - RUN.turn) / (1 - RUN.turn));
+      const back = { x: Math.sin(angle), y: -Math.cos(angle) };
+      glow(ctx, { x: p.x + back.x * 18, y: p.y + back.y * 18 }, 10 + 10 * heat, PAL.amber, 0.85 * heat);
+      glow(ctx, { x: p.x + back.x * 32, y: p.y + back.y * 32 }, 8 + 6 * heat, PAL.red, 0.5 * heat);
     }
-    drawShip(ctx, p.x, p.y, kinds[k], 1);
+    drawShip(ctx, p.x, p.y, kinds[k], 1, 1, angle);
     // drones orbit the ship
+    ctx.globalAlpha = fadeOut;
     drawDrones(ctx, p.x, p.y, Math.round(w * DRONES), now, i);
     // Ground Control's reticle: off-centre by the class's tracking error, the same in every lane
     if (fr && mo && arrive >= 1 && leave === 0) {
@@ -376,6 +377,63 @@ export function drawField(ctx: CanvasRenderingContext2D, v: FieldView) {
       drawReticle(ctx, p.x + off, p.y);
     }
     ctx.globalAlpha = 1;
+  }
+
+  // the survivors' bombs: they fall from the low pass, burst on the surface and leave burning marks
+  if (mo && fr && leave > RUN.release) {
+    const after = mo.seg.kind === "pause" ? mo.q : 0;
+    for (let i = 0; i < m; i++) {
+      if (!standing(i)) continue;
+      const b = passAt(i);
+      for (let j = 0; j < RUN.bombs; j++) {
+        const x = b.x + (j - (RUN.bombs - 1) / 2) * 14;
+        const ground = { x, y: L.surfaceY(x) + 3 };
+        const t0 = RUN.release + j * 0.04;
+        const f = (leave - t0) / RUN.bombFall;
+        if (f <= 0) continue;
+        if (f < 1) {
+          const y = b.y + 10 + (ground.y - b.y - 10) * f * f;
+          glow(ctx, { x, y: y - 6 }, 5, PAL.red, 0.5);
+          ctx.fillStyle = PAL.amber;
+          ctx.fillRect(x - 2, y - 2, 4, 4);
+          continue;
+        }
+        const g = Math.min(1, (f - 1) * RUN.bombFall / 0.14);
+        ctx.fillStyle = `rgba(255,77,94,${0.75 * (1 - after * 0.6)})`;
+        ctx.beginPath();
+        ctx.ellipse(ground.x, ground.y, 8, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (g < 1) glow(ctx, { x: ground.x, y: ground.y - 6 }, 8 + 22 * g, PAL.amber, 1 - g * 0.8);
+        else glow(ctx, { x: ground.x, y: ground.y - 4 }, 7 + 3 * Math.sin(now / 90 + i + j), PAL.red, 0.6 * (1 - after * 0.6));
+      }
+    }
+  }
+
+  // where the bolts strike: a splash on a shield that holds, a burst through one that gives way
+  for (const sh of shots) {
+    if (!visible(sh.i)) continue;
+    drawImpact(ctx, sh.at, pos(sh.i), (mo!.q - HIT_AT) / (1 - HIT_AT), sh.color, sh.broke);
+  }
+
+  // Ground Control launches the drones to their ships
+  if (mo && mo.seg.kind === "deploy") {
+    const from = { x: L.gc.x, y: L.gc.y - 16 };
+    ctx.fillStyle = PAL.drone;
+    for (let i = 0; i < m; i++) {
+      const n = Math.round((mo.initial[i] ?? 0) * DRONES);
+      if (!n) continue;
+      const to = pos(i);
+      const cp = { x: (from.x + to.x) / 2 + (to.x < from.x ? -60 : 60), y: Math.min(from.y, to.y) + (from.y - to.y) * 0.25 };
+      for (let j = 0; j < n; j++) {
+        const t = deployProgress(mo.q, j, n);
+        if (t <= 0 || t >= 1) continue;
+        const end = { x: to.x + Math.cos(j * 2.4) * (SHIP_R + 12), y: to.y + Math.sin(j * 2.4) * (SHIP_R + 12) * 0.55 };
+        const pt = bez(from, cp, end, t);
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 1.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   // drones in flight
@@ -430,6 +488,111 @@ function arrowHead(ctx: CanvasRenderingContext2D, c: Pt, p: Pt, color: string) {
   ctx.lineTo(p.x - 9 * Math.cos(ang + 0.4), p.y - 9 * Math.sin(ang + 0.4));
   ctx.closePath();
   ctx.fill();
+}
+
+const bez = (a: Pt, c: Pt, b: Pt, t: number): Pt => ({
+  x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t * t * b.x,
+  y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t * t * b.y,
+});
+
+/** Where on the path from a cannon to a ship the shot meets the shield. */
+function shieldContact(a: Pt, c: Pt, b: Pt): number {
+  for (let s = 1; s <= 80; s++) {
+    const t = s / 80;
+    const p = bez(a, c, b, t);
+    if (Math.hypot(p.x - b.x, p.y - b.y) < SHIP_R + 4) return t;
+  }
+  return 1;
+}
+
+/** Shield shown as a share of the ring: full when unbreakable, else the shield on the 0–5 scale. */
+const SHIELD_MAX = 5;
+const shieldFrac = (sh: number) => (Number.isFinite(sh) ? Math.max(0.04, Math.min(1, sh / SHIELD_MAX)) : 1);
+
+function drawShield(ctx: CanvasRenderingContext2D, x: number, y: number, frac: number, from: number | null, fade: number, hit: number, broke: boolean) {
+  const r = SHIP_R + 4;
+  // the ring is centred on the side facing the guns and gives way from the back
+  const arc = (f: number) => {
+    ctx.beginPath();
+    ctx.arc(x, y, r, Math.PI / 2 - f * Math.PI, Math.PI / 2 + f * Math.PI);
+  };
+  ctx.lineCap = "butt";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(77,225,255,0.10)";
+  arc(1);
+  ctx.stroke();
+  if (from !== null && from > frac + 1e-3) {
+    // what the drones just drained, fading out
+    ctx.strokeStyle = `rgba(230,250,255,${0.85 * fade})`;
+    arc(from);
+    ctx.stroke();
+  }
+  if (broke) {
+    ctx.strokeStyle = `rgba(255,77,94,${0.4 + 0.6 * hit})`;
+    ctx.setLineDash([6, 4]);
+  } else ctx.strokeStyle = `rgba(77,225,255,${0.7 + 0.3 * hit})`;
+  ctx.lineWidth = 4 + 3 * hit;
+  arc(frac);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (frac >= 1 && !broke) {
+    // unbreakable: an outer ring as well
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(200,240,255,0.5)";
+    ctx.beginPath();
+    ctx.arc(x, y, r + 6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function glow(ctx: CanvasRenderingContext2D, p: Pt, r: number, color: string, a: number) {
+  const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+  g.addColorStop(0, `rgba(255,255,255,${a})`);
+  g.addColorStop(0.35, color);
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.globalAlpha = a;
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawFlash(ctx: CanvasRenderingContext2D, p: Pt, color: string, a: number) {
+  glow(ctx, p, 10 + 8 * a, color, a);
+}
+
+/** An energy bolt at progress t along its path, with a short fading trail. */
+function drawBolt(ctx: CanvasRenderingContext2D, a: Pt, c: Pt, b: Pt, t: number, color: string) {
+  for (let k = 6; k >= 1; k--) glow(ctx, bez(a, c, b, Math.max(0, t - k * 0.025)), 8 - k * 0.8, color, 0.55 - k * 0.07);
+  glow(ctx, bez(a, c, b, t), 12, color, 1);
+}
+
+/** A bolt striking a shield: it splashes on one that holds and bursts through one that gives way. */
+function drawImpact(ctx: CanvasRenderingContext2D, at: Pt, ship: Pt, q: number, color: string, broke: boolean) {
+  const a = Math.max(0, 1 - q);
+  if (broke) {
+    glow(ctx, at, 10 + 22 * q, color, a);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = a;
+    for (let s = 0; s < 8; s++) {
+      const an = (s / 8) * Math.PI * 2;
+      ctx.fillRect(at.x + Math.cos(an) * 26 * q - 1.5, at.y + Math.sin(an) * 26 * q - 1.5, 3, 3);
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  glow(ctx, at, 8 + 6 * q, color, a * 0.9);
+  // sparks running along the shield away from the impact
+  const base = Math.atan2(at.y - ship.y, at.x - ship.x);
+  ctx.fillStyle = color;
+  ctx.globalAlpha = a;
+  for (const dir of [-1, 1])
+    for (let s = 1; s <= 3; s++) {
+      const an = base + dir * (0.15 + 0.5 * q) * s * 0.6;
+      ctx.fillRect(ship.x + Math.cos(an) * (SHIP_R + 4) - 1, ship.y + Math.sin(an) * (SHIP_R + 4) - 1, 2, 2);
+    }
+  ctx.globalAlpha = 1;
 }
 
 function drawDrones(ctx: CanvasRenderingContext2D, x: number, y: number, n: number, now: number, seed: number) {
@@ -489,19 +652,21 @@ function drawDish(ctx: CanvasRenderingContext2D, x: number, y: number, on: boole
 }
 
 /** Enemy ship pointing down towards the planet; `kind` indexes SHIP_KINDS (attack, recon, supply, escort). */
-export function drawShip(ctx: CanvasRenderingContext2D, x: number, y: number, kind: number, a: number, scale = 1) {
+export function drawShip(ctx: CanvasRenderingContext2D, x: number, y: number, kind: number, a: number, scale = 1, angle = 0) {
   const img = sprite(`ship-${SHIP_KINDS[kind % SHIP_KINDS.length]}`);
   if (img && scale === 1) {
-    const ga = ctx.globalAlpha;
+    ctx.save();
     ctx.globalAlpha *= a;
-    blit(ctx, img, x, y, "centre");
-    ctx.globalAlpha = ga;
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    blit(ctx, img, 0, 0, "centre");
+    ctx.restore();
     return;
   }
   const k = kind;
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(-Math.PI / 2);
+  ctx.rotate(angle - Math.PI / 2);
   ctx.scale(scale, scale);
   ctx.globalAlpha *= a;
   ctx.strokeStyle = PAL.red;

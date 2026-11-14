@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { timeline, momentAt, totalDuration, HIT_AT, type Seg } from "./timeline";
+import { timeline, momentAt, totalDuration, HIT_AT, DUR, type Seg } from "./timeline";
 import { runFormation } from "../engine/battle";
 import { compile, defaultDesign, defaultScenario, effectsFor } from "../engine/model";
 import { Rng } from "../engine/rng";
@@ -65,5 +65,23 @@ describe("battle timeline", () => {
         expect(mo.counted).toBe(mo.seg.kind === "resolve" || mo.seg.kind === "pause");
       }
     }
+  });
+
+  it("brings the formation in without drones; Ground Control launches them before the first shot", () => {
+    const fr = formations[0];
+    const segs = timeline(fr);
+    expect(segs.slice(0, 3).map((x) => x.kind)).toEqual(["arrive", "deploy", "fire"]);
+    const at = (t: number) => momentAt(fr, p.weights, segs, t);
+    const mid = at(DUR.arrive * 0.5);
+    expect(mid.weights.every((w) => w === 0)).toBe(true);
+    expect(mid.deploy).toBe(0);
+    const early = at(DUR.arrive + DUR.deploy * 0.25);
+    expect(early.weights.every((w) => w === 0)).toBe(true);
+    const late = at(DUR.arrive + DUR.deploy * 0.75);
+    late.weights.forEach((w, i) => expect(w).toBeCloseTo(p.weights[i] * 0.5, 12));
+    expect(late.weightsFrom.every((w) => w === 0)).toBe(true);
+    const fire = at(DUR.arrive + DUR.deploy + 1);
+    expect(fire.weights).toEqual(p.weights);
+    expect(fire.weightsFrom).toEqual(p.weights);
   });
 });
