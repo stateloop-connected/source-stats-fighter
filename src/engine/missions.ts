@@ -59,6 +59,8 @@ export interface Mission {
   intelReport?: string[];
   /** How much the board's verdict weighs: merit points are multiplied by this. */
   stakes: number;
+  /** Merit for each secondary goal met, where the board weighs them more than the mission weight (missing: `stakes`). */
+  secondaryPoints?: number;
   /**
    * Variation between runs: alternative true effects within what intelligence states. Each run plays
    * one of them, chosen when the mission starts; the scenario's own true effects are the first.
@@ -390,6 +392,7 @@ function m7(): Mission {
     number: 7,
     title: "Priorities",
     stakes: 2,
+    secondaryPoints: 4,
     scenario: sc,
     variants: [{}, { [T("c1", "k1")]: 0.39, [T("c1", "k2")]: 0.28, [T("c1", "k3")]: 0.36 }],
     rules: { wormholes: true, presets: ["equal", "strict", "holm"], exports: true, simulator: INTEL_SIM },

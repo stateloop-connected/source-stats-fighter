@@ -1,6 +1,10 @@
 # Alpha Wars ’89 — version 0.3
 
-A browser game about planetary defence that is secretly about graphical multiple testing procedures. Version 0.3 adds a campaign of authored missions on top of the free-training workbench of 0.2, following `../Campaign Version Plan.md`. All seven build steps are in: mission data and rules, the campaign shell, missions 1–8 with balance checks, the board of inquiry with rank and service record, simulator rationing and variation between runs, and artwork in `public/art/`.
+A browser game about planetary defence that is secretly about graphical multiple testing procedures. Version 0.3 adds a campaign of eight authored missions on top of the free-training workbench of 0.2: mission rules and briefings, a board of inquiry with rank and service record, simulator rationing, variation between runs, and artwork in `public/art/`.
+
+## Disclaimer
+
+Alpha Wars ’89 is a game for learning and for fun. Its calculations and its R and TikZ exports come with no warranty of any kind. Do not use it to plan, size or analyse real clinical trials or other studies; use validated software and consult a qualified statistician.
 
 ## Run locally
 
@@ -31,7 +35,7 @@ npm run build    # static site in dist/
   - `state.ts` saved state (data version 3): two workspaces, free training and the current mission, plus the campaign
   - `campaign.ts` start screen, mission briefing, service record; `hints.ts` the chief scientist's hints
   - `art.ts` picture slots: `public/art/<name>.png` enlarged by whole factors without smoothing, with drawn fallbacks when a file is missing
-  - `battlefield.ts` also loads the battle sprites (`ship-attack|recon|supply|escort`, `cannon-1..3`, `ground-control`, `explosion`) from `public/art/` when present, drawn at 2× without smoothing; ships are matched to classes by name. Cannons stand on native row 30 and fire from row 1; Ground Control stands on row 27 (constants in `battlefield.ts`; change them if replacement sprites move their feet). See `../Battlefield Sprites Brief.md`
+  - `battlefield.ts` also loads the battle sprites (`ship-attack|recon|supply|escort`, `cannon-1..3`, `ground-control`, `explosion`) from `public/art/` when present, drawn at 2× without smoothing; ships are matched to classes by name. Cannons stand on native row 30 and fire from row 1; Ground Control stands on row 27 (constants in `battlefield.ts`; change them if replacement sprites move their feet)
   - `panel.ts` panels that redraw only when their data changes and keep keyboard focus
   - `setup.ts`, `network.ts` Setup screen and SVG network editor
   - `simulation.ts`, `sim.worker.ts` Simulation screen and its Web Worker
@@ -39,4 +43,8 @@ npm run build    # static site in dist/
 
 ## Deployment
 
-The project is kept local for now. `.github/workflows/deploy.yml` is ready for later: it tests, builds and publishes `dist/` to GitHub Pages on every push to `main` once the repository is on GitHub with Pages → Source set to "GitHub Actions". The Vite `base` is relative, so the site works at any `https://<account>.github.io/<repository>/` address.
+`.github/workflows/deploy.yml` tests, builds and publishes `dist/` to GitHub Pages on every push to `main`. In the repository settings, set Pages → Source to "GitHub Actions". The Vite `base` is relative, so the site works at any `https://<account>.github.io/<repository>/` address.
+
+## Licence
+
+MIT, see `LICENSE`.

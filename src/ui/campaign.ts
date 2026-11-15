@@ -1,6 +1,6 @@
 import { h, pct } from "./dom";
 import { art } from "./art";
-import { activeMission, enterFree, enterMission, MISSION_COUNT, setPhase, startNewCampaign, state, studyMission } from "./state";
+import { activeMission, enterFree, enterMission, MISSION_COUNT, setPhase, startNewCampaign, state, studyMission, STUDY_QUESTION } from "./state";
 import { CHARACTERS } from "../engine/missions";
 import { missions } from "../engine/missions";
 import { isOver, standing } from "../engine/campaign";
@@ -152,6 +152,7 @@ export function renderEnd(root: HTMLElement, go: Go) {
             class: "small",
             title: "Open this mission in free training to study it",
             onClick: () => {
+              if (!confirm(STUDY_QUESTION)) return;
               studyMission(r.missionId);
               enterFree();
               go("setup");

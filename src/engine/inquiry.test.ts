@@ -23,6 +23,8 @@ describe("board of inquiry", () => {
   it("pays for secondary goals and unspent energy only when the battle was won on a plan that deserved it", () => {
     const extras = { secondaryMet: ["Recon", "Supply"], energyUsed: 250 };
     expect(judge({ ...base, ...extras, stakes: 2 }, START).after.merit).toBe(4 + 2 + 2 + 1);
+    expect(judge({ ...base, ...extras, stakes: 2, secondaryPoints: 4 }, START).after.merit).toBe(4 + 4 + 4 + 1);
+    expect(missions().filter((m) => m.secondaryPoints !== undefined).map((m) => m.id)).toEqual(["m7"]);
     expect(judge({ ...base, ...extras, odds: 0.3 }, START).after.merit).toBe(0);
     expect(judge({ ...base, ...extras, won: false }, START).after.merit).toBe(0);
   });
@@ -43,7 +45,7 @@ describe("board of inquiry", () => {
       let st = START;
       for (const m of missions()) {
         const secondaries = extras ? m.scenario.classes.filter((k) => !k.primary).map((k) => k.name) : [];
-        st = judge({ ...base, odds: verdictOdds, stakes: m.stakes, secondaryMet: secondaries, energyUsed: extras ? 270 : 300 }, st).after;
+        st = judge({ ...base, odds: verdictOdds, stakes: m.stakes, secondaryMet: secondaries, secondaryPoints: m.secondaryPoints, energyUsed: extras ? 270 : 300 }, st).after;
       }
       return st.rank;
     };

@@ -33,6 +33,11 @@ export function fmt(x: number): string {
   return String(Math.round(x * 1e6) / 1e6);
 }
 
+/** Names on one line, so that a name cannot end a comment and put text into the code. */
+const oneLine = (s: string) => s.replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g, " ").trim();
+
+const NOTE = "Exported from a game. No warranty on the numbers; not for planning real trials.";
+
 const rName = (s: string) => s.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "H";
 
 function hypNames(s: Scenario): string[] {
@@ -52,9 +57,10 @@ export function toR(s: Scenario, d: Design): string {
   const names = hypNames(s);
   const m = ts.length;
   const lines: string[] = [];
-  lines.push(`# Alpha Wars ’89 — design "${d.name}" for scenario "${s.name}"`);
+  lines.push(`# Alpha Wars ’89 — design "${oneLine(d.name)}" for scenario "${oneLine(s.name)}"`);
+  lines.push(`# ${NOTE}`);
   lines.push(`# One hypothesis per target (cannon vs ship class):`);
-  ts.forEach((t, i) => lines.push(`#   ${names[i]} = ${t.label}`));
+  ts.forEach((t, i) => lines.push(`#   ${names[i]} = ${oneLine(t.label)}`));
   lines.push(`alpha <- ${fmt(s.alpha)}`);
   lines.push(`hyp <- c(${names.map((n) => `"${n}"`).join(", ")})`);
   lines.push(`weights <- setNames(c(${w.map(fmt).join(", ")}), hyp)`);
@@ -76,7 +82,8 @@ export function toR(s: Scenario, d: Design): string {
   return lines.join("\n") + "\n";
 }
 
-const texEsc = (s: string) => s.replace(/([\\{}$&#^_%~])/g, "\\$1");
+const TEX: Record<string, string> = { "\\": "\\textbackslash{}", "^": "\\^{}", "~": "\\~{}" };
+const texEsc = (s: string) => oneLine(s).replace(/[\\{}$&#^_%~]/g, (ch) => TEX[ch] ?? `\\${ch}`);
 
 export function toTikZ(s: Scenario, d: Design): string {
   const ts = targets(s);
@@ -87,6 +94,7 @@ export function toTikZ(s: Scenario, d: Design): string {
   const P = (p: { x: number; y: number }) => `(${cm(p.x)}, ${cm(-p.y)})`;
   const lines: string[] = [];
   lines.push(`% Alpha Wars ’89 — design "${texEsc(d.name)}" for scenario "${texEsc(s.name)}"`);
+  lines.push(`% ${NOTE}`);
   lines.push(`% One node per target (cannon vs ship class) with its initial weight; edges carry transition weights.`);
   lines.push(`% Ship classes are rows and cannons are columns, as in the game's editor.`);
   lines.push(`% requires \\usetikzlibrary{arrows.meta}`);

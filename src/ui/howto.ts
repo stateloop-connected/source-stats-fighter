@@ -87,6 +87,12 @@ export function renderHowTo(root: HTMLElement) {
         null,
         "For statisticians: each formation is one trial. Cannons are treatment arms, Ground Control a shared control, energy is sample size, targets are hypotheses, the impact is the z statistic, the shield is the critical value, the swarm is α, drone shares are the initial weights, and wormholes the transition matrix of a Bonferroni-based graphical procedure (Bretz et al. 2009). The cannon's and the tracking part of an impact are the treatment and control contributions to the statistic; the shared control makes statistics for the same class correlated (0.5 with equal energy). The share of a class stopped over all lanes is the average power of that class's hypotheses. Export your design to R (gMCP, graphicalMCP) or TikZ in the Setup tab.",
       ),
+      h("h3", null, "Disclaimer"),
+      h(
+        "p",
+        null,
+        "Alpha Wars ’89 is a game for learning and for fun. Its calculations and exports come with no warranty of any kind, and it must not be used to plan, size or analyse real clinical trials or other studies. For real work, use validated software and consult a qualified statistician.",
+      ),
     ),
   );
 }

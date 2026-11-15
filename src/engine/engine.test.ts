@@ -367,6 +367,20 @@ describe("export", () => {
     expect(tex.match(/\\draw\[edge\]/g)!.length).toBe(4);
   });
 
+  it("keeps names on one line in the exports and writes them as plain text in TikZ", () => {
+    const s = defaultScenario();
+    const d = defaultDesign();
+    d.name = 'x"\nsystem("rm")\n#';
+    s.cannons[0].name = "A~B^C\\D";
+    const r = toR(s, d);
+    expect(r.split("\n").filter((l) => l.includes("system("))).toEqual([r.split("\n")[0]]);
+    expect(r.split("\n")[0].startsWith("#")).toBe(true);
+    expect(r).toContain("No warranty");
+    const tex = toTikZ(s, d);
+    expect(tex.split("\n")[0]).toContain("system(");
+    expect(tex).toContain("A\\~{}B\\^{}C\\textbackslash{}D\\\\Attack");
+  });
+
   it("upgrades version 1 files and rejects broken or newer ones", () => {
     const s = defaultScenario();
     const d = defaultDesign();

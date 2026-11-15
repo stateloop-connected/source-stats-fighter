@@ -3,7 +3,7 @@ import { h } from "./ui/dom";
 import { activeMission, enterMission, onContextChange, state, subscribe, MISSION_COUNT } from "./ui/state";
 import { renderSetup, resetSetup } from "./ui/setup";
 import { renderSimulation, resetSimulation } from "./ui/simulation";
-import { battleScreen, showBattle, hideBattle, resetBattle } from "./ui/battle";
+import { battleScreen, showBattle, hideBattle, resetBattle, battleOver } from "./ui/battle";
 import { renderHowTo } from "./ui/howto";
 import { renderStart, renderBriefing, renderEnd, type View } from "./ui/campaign";
 import { isOver, standing } from "./engine/campaign";
@@ -60,9 +60,17 @@ function renderNav() {
   );
 }
 
-/** The commander's rank insignia and name, for the context bar. */
+/**
+ * The commander's rank insignia and name, for the context bar. While the current mission's battle
+ * has not been shown to its end, the board's verdict on it is left out, so the badge does not give
+ * the result away.
+ */
 function rankBadge() {
-  const r = RANKS[state.campaign ? standing(state.campaign).rank : 0];
+  const c = state.campaign;
+  const m = activeMission();
+  const hide = !!c && !!m && c.phase === "launched" && !battleOver();
+  const shown = c && hide ? { ...c, record: c.record.filter((x) => x.missionId !== m!.id) } : c;
+  const r = RANKS[shown ? standing(shown).rank : 0] ?? RANKS[0];
   return h("span", { class: "rank-badge", title: `Your rank: ${r.name}` }, art(r.insignia, 32, 32, { fallback: "insignia", maxScale: 1, minScale: 1, class: "insignia tiny" }), h("span", null, r.name), h("span", { class: "dim" }, " · "));
 }
 
@@ -107,7 +115,7 @@ app.append(
     nav,
   ),
   ...VIEWS.map((v) => panes[v]),
-  h("footer", null, "Alpha Wars ’89 · version 0.3 · progress is stored in this browser only"),
+  h("footer", null, "Alpha Wars ’89 · version 0.3 · progress is stored in this browser only · a game, not a tool for planning trials: no warranty on its calculations"),
 );
 battleScreen(panes.battle, {
   onContinue: (next) => go(next),

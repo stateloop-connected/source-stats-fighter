@@ -329,7 +329,7 @@ export function ensureInquiry(): Promise<void> {
       const secondaryMet = sc.classes.filter((k, i) => !k.primary && (rec.tally[i] ?? 0) >= goalCount(k.goal, ships)).map((k) => k.name);
       const before = standing({ ...c, record: c.record.slice(0, c.record.indexOf(rec)) });
       rec.inquiry = judge(
-        { won: rec.won, odds: mine.allPrimary, rivalOdds: rival.allPrimary, stakes: m.stakes, secondaryMet, energyUsed: rec.energyUsed, energyAvailable: sc.energyAvailable },
+        { won: rec.won, odds: mine.allPrimary, rivalOdds: rival.allPrimary, stakes: m.stakes, secondaryMet, secondaryPoints: m.secondaryPoints, energyUsed: rec.energyUsed, energyAvailable: sc.energyAvailable },
         before,
       );
       persist();
@@ -372,6 +372,9 @@ export function dismissHint(id: string) {
   persist();
   notify();
 }
+
+/** What opening a mission for study replaces, for the question asked before it is done. */
+export const STUDY_QUESTION = "Open this mission in free training? It replaces the scenario and the design you are working on there. Saved designs are kept.";
 
 /** Load a mission fought in the current run into free training, so it can be studied. */
 export function studyMission(missionId: string) {
@@ -423,8 +426,9 @@ export function normalize(st: Workspace) {
     for (const k of Object.keys(d.energy)) if (!ids.has(k)) delete d.energy[k];
     for (const id of ids) if (d.energy[id] === undefined) d.energy[id] = 0;
   };
+  // Only the design being edited is fitted to the scenario. Saved designs are left as they were
+  // saved: parts that do not exist in the current scenario are ignored, and return with their scenario.
   fixDesign(st.design);
-  st.saved.forEach((sd) => fixDesign(sd.design));
 }
 
 export function cloneDesign(d: Design): Design {

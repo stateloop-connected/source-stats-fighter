@@ -1,5 +1,5 @@
 import { h, pct, num, fill } from "./dom";
-import { state, activeMission, recordBattle, advanceCampaign, ensureInquiry, inquiryFailed } from "./state";
+import { state, activeMission, recordBattle, advanceCampaign, ensureInquiry, inquiryFailed, notify, INQUIRY_BATTLES } from "./state";
 import { art } from "./art";
 import { hints } from "./hints";
 import { currentRecord, type BattleRecord } from "../engine/campaign";
@@ -101,6 +101,9 @@ export function resetBattle() {
   logEl.replaceChildren();
   debriefEl.replaceChildren();
 }
+
+/** Whether the battle on screen has been shown to its end (the result is then no secret). */
+export const battleOver = () => !!battle && battle.fi >= battle.problem.formations;
 
 export function showBattle() {
   visible = true;
@@ -231,6 +234,8 @@ function skip() {
 }
 
 function finish() {
+  // the header may now show the rank the board has given
+  notify();
   renderControls();
   renderTally();
   renderDebrief();
@@ -381,8 +386,8 @@ function renderDebrief() {
       if (rec.inquiry)
         fill(
           odds,
-          bar({ label: h("strong", null, "Your design"), sub: "all primary goals", value: rec.inquiry.odds, n: 4000 }),
-          bar({ label: "Hollister’s plan", sub: "the reference design", value: rec.inquiry.rivalOdds, n: 4000 }),
+          bar({ label: h("strong", null, "Your design"), sub: "all primary goals", value: rec.inquiry.odds, n: INQUIRY_BATTLES }),
+          bar({ label: "Hollister’s plan", sub: "the reference design", value: rec.inquiry.rivalOdds, n: INQUIRY_BATTLES }),
         );
       else fill(odds, h("p", { class: "dim" }, "The board is weighing the plan…"));
     } else {

@@ -1,5 +1,5 @@
 import { h, numInput, download, newId, pct, add, num } from "./dom";
-import { state, commit, notify, cloneDesign, resetAll, loadNotes, rules, studyMission } from "./state";
+import { state, commit, notify, cloneDesign, resetAll, loadNotes, rules, studyMission, STUDY_QUESTION } from "./state";
 import { hints, openHints } from "./hints";
 import { missions } from "../engine/missions";
 import { panel, type Panel } from "./panel";
@@ -231,6 +231,7 @@ function scenarioEditor(el: HTMLElement) {
                 class: "small",
                 title: "Load the mission's scenario and the design you fought with",
                 onClick: () => {
+                  if (!confirm(STUDY_QUESTION)) return;
                   selection = null;
                   studyMission(r.missionId);
                 },

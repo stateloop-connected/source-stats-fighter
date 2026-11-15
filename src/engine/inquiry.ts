@@ -58,6 +58,8 @@ export interface InquiryInput {
   stakes: number;
   /** Names of secondary goals that were met. */
   secondaryMet: string[];
+  /** Merit for each secondary goal met (missing: the mission weight). */
+  secondaryPoints?: number;
   energyUsed: number;
   energyAvailable: number;
 }
@@ -93,7 +95,7 @@ export function judge(inp: InquiryInput, before: Standing): Inquiry {
   if (verdict === "reprimand") items.push({ reason: "Reprimand", points: -2 * s });
   // extras count only when the primary goals were met, and not for a lucky win
   if (inp.won && verdict !== "lucky") {
-    for (const name of inp.secondaryMet) items.push({ reason: `Secondary goal met: ${name}`, points: s });
+    for (const name of inp.secondaryMet) items.push({ reason: `Secondary goal met: ${name}`, points: inp.secondaryPoints ?? s });
     if (inp.energyUsed <= 0.9 * inp.energyAvailable) items.push({ reason: "At least a tenth of the energy returned", points: 1 });
   }
   const merit = Math.max(MERIT_FLOOR, before.merit + items.reduce((a, x) => a + x.points, 0));
